@@ -45,9 +45,11 @@ class BspProjectTreeStructure(
         targetById = targetsWithoutRoot.associate { Pair(it.id.uri, BspNodeStatus(it, isStaged = false, isResolved = false)) }.toMutableMap()
         val viewService = project.service<BspProjectViewService>()
         val filteredTargets = viewService.filterIncludedPackages(targets.map { it.id })
-        for (targ in filteredTargets)
-            if (targetById.containsKey(targ.uri))
+        for (targ in filteredTargets) {
+            if (targetById.containsKey(targ.uri)) {
                 targetById[targ.uri] = BspNodeStatus(targetById[targ.uri]!!.target, true, true)
+            }
+        }
 
         root = BspSimpleNode.Root(targetById, targetsWithoutRoot.filter { top.contains(it.id) }, project)
         treeModel.invalidate()
