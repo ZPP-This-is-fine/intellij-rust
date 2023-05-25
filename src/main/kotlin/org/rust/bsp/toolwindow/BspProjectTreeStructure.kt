@@ -39,11 +39,7 @@ class BspProjectTreeStructure(
         top.removeIf { it.uri == BspConstants.BSP_WORKSPACE_ROOT_URI }
         val targetsWithoutRoot = targets.filter { it.id.uri != BspConstants.BSP_WORKSPACE_ROOT_URI }
 
-        for (t in targetsWithoutRoot) {
-            for (d in t.dependencies) {
-                top.remove(d)
-            }
-        }
+        top.removeAll(targetsWithoutRoot.flatMap { it.dependencies })
         // TODO : We assume that targets form DAG - can we assume that?
 
         targetById = targetsWithoutRoot.associate { Pair(it.id.uri, BspNodeStatus(it, isStaged = false, isResolved = false)) }.toMutableMap()
