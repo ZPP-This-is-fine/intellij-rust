@@ -17,6 +17,7 @@ import org.rust.cargo.project.workspace.PackageOrigin
 import org.rust.cargo.util.AutoInjectedCrates.CORE
 import org.rust.lang.core.macros.proc.ProcMacroApplicationService
 import org.rust.lang.core.psi.RsFunction
+import org.rust.lang.core.psi.RsStructItem
 import org.rust.lang.core.psi.RsTraitItem
 import org.rust.lang.core.psi.ext.*
 import org.rust.lang.core.psi.rustStructureModificationTracker
@@ -83,6 +84,7 @@ class KnownItems(
     val Mutex: RsStructOrEnumItemElement? get() = findItem("std::sync::mutex::Mutex")
     val Path: RsStructOrEnumItemElement? get() = findItem("std::path::Path")
     val PathBuf: RsStructOrEnumItemElement? get() = findItem("std::path::PathBuf")
+    val CStr: RsStructOrEnumItemElement? get() = findItem("std::ffi::CStr")
 
     val Iterator: RsTraitItem? get() = findItem("core::iter::Iterator")
     val IntoIterator: RsTraitItem? get() = findItem("core::iter::IntoIterator")
@@ -96,6 +98,7 @@ class KnownItems(
     val Hash: RsTraitItem? get() = findItem("core::hash::Hash")
     val Default: RsTraitItem? get() = findItem("core::default::Default")
     val Display: RsTraitItem? get() = findItem("core::fmt::Display")
+    val Formatter: RsStructItem? get() = findItem("core::fmt::Formatter")
     val ToOwned: RsTraitItem? get() = findItem("alloc::borrow::ToOwned")
     val ToString: RsTraitItem? get() = findItem("alloc::string::ToString")
     val Try: RsTraitItem? get() = findItem("core::ops::try_trait::Try") ?: findItem("core::ops::try::Try")
@@ -143,8 +146,13 @@ class KnownItems(
     val Debug: RsTraitItem? get() = findLangItem("debug_trait") ?: findItem("core::fmt::Debug")
     val Box: RsStructOrEnumItemElement? get() = findLangItem("owned_box", "alloc")
     val Pin: RsStructOrEnumItemElement? get() = findLangItem("pin", "core")
+    val ManuallyDrop: RsStructOrEnumItemElement? get() = findLangItem("manually_drop")
 
     val drop: RsFunction? get() = findItem("core::mem::drop")
+
+    val Range: RsStructOrEnumItemElement? get() = findLangItem("Range")
+    val RangeInclusive: RsStructOrEnumItemElement? get() = findLangItem("RangeInclusive")
+    val RangeInclusiveNew: RsFunction? get() = findLangItem("range_inclusive_new")
 }
 
 interface KnownItemsLookup {

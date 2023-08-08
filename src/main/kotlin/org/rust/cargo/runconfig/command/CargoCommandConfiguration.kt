@@ -19,6 +19,7 @@ import com.intellij.execution.testframework.sm.runner.SMTRunnerConsoleProperties
 import com.intellij.execution.util.ProgramParametersUtil
 import com.intellij.internal.statistic.eventLog.events.EventPair
 import com.intellij.openapi.options.SettingsEditor
+import com.intellij.openapi.options.advanced.AdvancedSettings
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.NlsContexts.DialogMessage
 import com.intellij.openapi.util.SystemInfo
@@ -37,6 +38,7 @@ import org.rust.cargo.runconfig.target.BuildTarget
 import org.rust.cargo.runconfig.target.RsLanguageRuntimeConfiguration
 import org.rust.cargo.runconfig.target.RsLanguageRuntimeType
 import org.rust.cargo.runconfig.test.CargoTestConsoleProperties
+import org.rust.cargo.runconfig.test.CargoTestConsoleProperties.Companion.TEST_TOOL_WINDOW_SETTING_KEY
 import org.rust.cargo.runconfig.ui.CargoCommandConfigurationEditor
 import org.rust.cargo.toolchain.BacktraceMode
 import org.rust.cargo.toolchain.CargoCommandLine
@@ -44,9 +46,7 @@ import org.rust.cargo.toolchain.RsToolchainBase
 import org.rust.cargo.toolchain.RustChannel
 import org.rust.cargo.toolchain.tools.Cargo
 import org.rust.cargo.toolchain.tools.isRustupAvailable
-import org.rust.ide.experiments.RsExperiments
 import org.rust.ide.statistics.CargoCommandUsagesCollector
-import org.rust.openapiext.isFeatureEnabled
 import java.io.File
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -170,8 +170,8 @@ open class CargoCommandConfiguration(
         if (isRedirectInput) {
             val file = redirectInputFile
             when {
-                file?.exists() != true -> throw RuntimeConfigurationWarning("Input file doesn't exist")
-                !file.isFile -> throw RuntimeConfigurationWarning("Input file is not valid")
+                file?.exists() != true -> throw RuntimeConfigurationWarning(RsBundle.message("dialog.message.input.file.doesn.t.exist"))
+                !file.isFile -> throw RuntimeConfigurationWarning(RsBundle.message("dialog.message.input.file.not.valid"))
             }
         }
 
@@ -204,8 +204,8 @@ open class CargoCommandConfiguration(
     }
 
     private fun showTestToolWindow(commandLine: CargoCommandLine): Boolean = when {
-        !isFeatureEnabled(RsExperiments.TEST_TOOL_WINDOW) -> false
-        commandLine.command != "test" -> false
+        !AdvancedSettings.getBoolean(TEST_TOOL_WINDOW_SETTING_KEY) -> false
+        commandLine.command !in listOf("test", "bench") -> false
         "--nocapture" in commandLine.additionalArguments -> false
         Cargo.TEST_NOCAPTURE_ENABLED_KEY.asBoolean() -> false
         else -> !hasRemoteTarget
@@ -237,11 +237,11 @@ open class CargoCommandConfiguration(
 
     fun clean(): CleanConfiguration {
         val workingDirectory = workingDirectory
-            ?: return CleanConfiguration.error("No working directory specified")
+            ?: return CleanConfiguration.error(RsBundle.message("dialog.message.no.working.directory.specified"))
 
         val cmd = run {
             val parsed = ParsedCommand.parse(command)
-                ?: return CleanConfiguration.error("No command specified")
+                ?: return CleanConfiguration.error(RsBundle.message("dialog.message.no.command.specified"))
 
             CargoCommandLine(
                 parsed.command,
@@ -260,14 +260,14 @@ open class CargoCommandConfiguration(
         }
 
         val toolchain = project.toolchain
-            ?: return CleanConfiguration.error("No Rust toolchain specified")
+            ?: return CleanConfiguration.error(RsBundle.message("dialog.message.no.rust.toolchain.specified"))
 
         if (!toolchain.looksLikeValidToolchain()) {
-            return CleanConfiguration.error("Invalid toolchain: ${toolchain.presentableLocation}")
+            return CleanConfiguration.error(RsBundle.message("dialog.message.invalid.toolchain", toolchain.presentableLocation))
         }
 
         if (!toolchain.isRustupAvailable && channel != RustChannel.DEFAULT) {
-            return CleanConfiguration.error("Channel '$channel' is set explicitly with no rustup available")
+            return CleanConfiguration.error(RsBundle.message("dialog.message.channel.set.explicitly.with.no.rustup.available", channel))
         }
 
         return CleanConfiguration.Ok(cmd, toolchain)
@@ -279,6 +279,7 @@ open class CargoCommandConfiguration(
     }
 
     companion object {
+
         fun findCargoProject(project: Project, additionalArgs: List<String>, workingDirectory: Path?): CargoProject? {
             val cargoProjects = project.cargoProjects
             cargoProjects.allProjects.singleOrNull()?.let { return it }

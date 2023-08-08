@@ -16,6 +16,8 @@ import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.stubs.IStubElementType
 import com.intellij.psi.stubs.StubElement
 import com.intellij.psi.tree.IElementType
+import com.intellij.psi.util.PsiTreeUtil
+import com.intellij.util.CollectionQuery
 import com.intellij.util.Query
 import com.intellij.util.containers.addIfNotNull
 import org.rust.cargo.project.model.CargoProject
@@ -29,6 +31,7 @@ import org.rust.lang.core.crate.impl.FakeInvalidCrate
 import org.rust.lang.core.macros.findNavigationTargetIfMacroExpansion
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.resolve.*
+import org.rust.lang.core.resolve.ref.RsMacroBodyReferenceDelegateImpl
 
 interface RsElement : PsiElement, UserDataHolderEx {
     /**
@@ -74,10 +77,12 @@ val PsiElement.edition: Edition?
     get() = contextOrSelf<RsElement>()?.containingCrate?.edition
 
 val PsiElement.isAtLeastEdition2018: Boolean
-    get() {
-        val edition = edition ?: Edition.DEFAULT
-        return edition >= Edition.EDITION_2018
-    }
+    get() = isAtLeastEdition(Edition.EDITION_2018)
+
+val PsiElement.isAtLeastEdition2021: Boolean
+    get() = isAtLeastEdition(Edition.EDITION_2021)
+
+fun PsiElement.isAtLeastEdition(ed: Edition) = (edition ?: Edition.DEFAULT) >= ed
 
 /**
  * It is possible to match value with constant-like element, e.g.
@@ -237,6 +242,26 @@ fun RsElement.searchReferences(scope: SearchScope? = null): Query<PsiReference> 
         ReferencesSearch.search(this)
     } else {
         ReferencesSearch.search(this, scope)
+    }
+}
+
+fun RsElement.searchReferencesAfterExpansion(): Query<PsiReference> {
+    val query = if (this is RsPatBinding) {
+        val owner = PsiTreeUtil.getContextOfType(this,
+            RsBlock::class.java,
+            RsFunction::class.java,
+            RsLambdaExpr::class.java
+        ) ?: containingFile
+        ReferencesSearch.search(this, LocalSearchScope(owner), /*ignoreAccessScope=*/ true)
+    } else {
+        searchReferences()
+    }
+    return query.flatMapping {
+        if (it is RsMacroBodyReferenceDelegateImpl) {
+            CollectionQuery(it.delegates)
+        } else {
+            CollectionQuery(listOf(it))
+        }
     }
 }
 

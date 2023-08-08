@@ -5,9 +5,9 @@
 
 package org.rust.ide.fixes
 
-import com.intellij.codeInspection.LocalQuickFix
-import com.intellij.codeInspection.ProblemDescriptor
+import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
+import org.rust.RsBundle
 import org.rust.ide.inspections.getTypeArgumentsAndDeclaration
 import org.rust.lang.core.psi.RsTypeArgumentList
 import org.rust.lang.core.psi.ext.RsMethodOrPath
@@ -16,13 +16,14 @@ import org.rust.lang.core.psi.ext.getNextNonCommentSibling
 import org.rust.lang.core.psi.ext.startOffset
 
 class RemoveGenericArguments(
+    element: RsMethodOrPath,
     private val startIndex: Int,
     private val endIndex: Int
-) : LocalQuickFix {
-    override fun getFamilyName() = "Remove redundant generic arguments"
+) : RsQuickFixBase<RsMethodOrPath>(element) {
+    override fun getText(): String = RsBundle.message("intention.name.remove.redundant.generic.arguments")
+    override fun getFamilyName(): String = text
 
-    override fun applyFix(project: Project, descriptor: ProblemDescriptor) {
-        val element = descriptor.psiElement as? RsMethodOrPath ?: return
+    override fun invoke(project: Project, editor: Editor?, element: RsMethodOrPath) {
         val (typeArguments) = getTypeArgumentsAndDeclaration(element) ?: return
         typeArguments?.removeTypeParameters()
     }

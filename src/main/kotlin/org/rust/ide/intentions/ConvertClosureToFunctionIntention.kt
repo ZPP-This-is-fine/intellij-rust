@@ -9,20 +9,21 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
+import org.rust.RsBundle
 import org.rust.ide.intentions.util.macros.InvokeInside
 import org.rust.ide.presentation.renderInsertionSafe
 import org.rust.ide.utils.PsiModificationUtil
 import org.rust.ide.utils.template.buildAndRunTemplate
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
-import org.rust.lang.core.types.ty.TyFunction
+import org.rust.lang.core.types.ty.TyFunctionBase
 import org.rust.lang.core.types.ty.TyUnit
 import org.rust.lang.core.types.ty.TyUnknown
 import org.rust.lang.core.types.type
 import org.rust.openapiext.moveCaretToOffset
 
 class ConvertClosureToFunctionIntention : RsElementBaseIntentionAction<ConvertClosureToFunctionIntention.Context>() {
-    override fun getText(): String = "Convert closure to function"
+    override fun getText(): String = RsBundle.message("intention.name.convert.closure.to.function")
     override fun getFamilyName(): String = text
 
     override val attributeMacroHandlingStrategy: InvokeInside get() = InvokeInside.MACRO_CALL
@@ -56,7 +57,7 @@ class ConvertClosureToFunctionIntention : RsElementBaseIntentionAction<ConvertCl
         val useDefaultName = letBidingName == null
         val targetFunctionName = letBidingName ?: "func"
 
-        val fnType = ctx.lambda.type as? TyFunction ?: return
+        val fnType = ctx.lambda.type as? TyFunctionBase ?: return
         val parametersText = ctx.lambda.valueParameters.zip(fnType.paramTypes).joinToString(", ") { (pat, paramType) ->
             val patText = pat.patText ?: "_"
             val type = paramType.renderInsertionSafe()

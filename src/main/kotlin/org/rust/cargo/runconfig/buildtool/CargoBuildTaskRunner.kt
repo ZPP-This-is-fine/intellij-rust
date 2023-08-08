@@ -25,7 +25,6 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.task.*
 import com.intellij.task.impl.ProjectModelBuildTaskImpl
-import com.intellij.util.PlatformUtils
 import org.jetbrains.concurrency.*
 import org.rust.RsBundle
 import org.rust.cargo.project.model.cargoProjects
@@ -34,6 +33,7 @@ import org.rust.cargo.runconfig.CargoCommandRunner
 import org.rust.cargo.runconfig.buildProject
 import org.rust.cargo.runconfig.buildtool.CargoBuildManager.createBuildEnvironment
 import org.rust.cargo.runconfig.buildtool.CargoBuildManager.getBuildConfiguration
+import org.rust.cargo.runconfig.buildtool.CargoBuildManager.isBuildToolWindowAvailable
 import org.rust.cargo.runconfig.command.CargoCommandConfiguration
 import org.rust.cargo.runconfig.command.CargoCommandConfiguration.Companion.findCargoProject
 import org.rust.cargo.runconfig.createCargoCommandRunConfiguration
@@ -94,17 +94,22 @@ class CargoBuildTaskRunner : ProjectTaskRunner() {
         return resultPromise
     }
 
-    override fun canRun(projectTask: ProjectTask): Boolean =
-        when (projectTask) {
+    override fun canRun(projectTask: ProjectTask): Boolean {
+        return when (projectTask) {
             is ModuleFilesBuildTask -> false
-            is ModuleBuildTask ->
-                projectTask.module.cargoProjectRoot != null
+            is ModuleBuildTask -> {
+                if (projectTask.module.cargoProjectRoot != null) return true
+                val runManager = RunManager.getInstance(projectTask.module.project)
+                val buildableElement = runManager.selectedConfiguration?.configuration
+                buildableElement is CargoCommandConfiguration && buildableElement.isBuildToolWindowAvailable
+            }
             is ProjectModelBuildTask<*> -> {
                 val buildableElement = projectTask.buildableElement
                 buildableElement is CargoBuildConfiguration && buildableElement.enabled
             }
             else -> false
         }
+    }
 
     fun expandTask(task: ProjectTask): List<ProjectTask> {
         if (task !is ModuleBuildTask) return listOf(task)
@@ -145,7 +150,7 @@ class CargoBuildTaskRunner : ProjectTaskRunner() {
             val configuration = settings.configuration as? CargoCommandConfiguration ?: return@mapNotNull null
             configuration.emulateTerminal = false
             val buildableElement = CargoBuildConfiguration(configuration, environment)
-            ProjectModelBuildTaskImpl(buildableElement, false)
+            ProjectModelBuildTaskImpl(buildableElement, task.isIncrementalBuild)
         }
     }
 
@@ -201,7 +206,7 @@ private class BackgroundableProjectTaskRunner(
     private val parentRunner: CargoBuildTaskRunner,
     private val totalPromise: AsyncPromise<ProjectTaskRunner.Result>,
     private val waitingIndicator: Future<ProgressIndicator>
-) : Task.Backgroundable(project, "Building...", true) {
+) : Task.Backgroundable(project, RsBundle.message("progress.title.building"), true) {
     val executionStarted: CompletableFuture<Boolean> = CompletableFuture()
 
     override fun run(indicator: ProgressIndicator) {
@@ -278,7 +283,7 @@ private class WaitingTask(
     project: Project,
     val waitingIndicator: CompletableFuture<ProgressIndicator>,
     val executionStarted: Future<Boolean>
-) : Task.Backgroundable(project, "Waiting for the current build to finish...", true) {
+) : Task.Backgroundable(project, RsBundle.message("progress.text.waiting.for.current.build.to.finish"), true) {
     override fun run(indicator: ProgressIndicator) {
         // Wait until queued task will start executing.
         // Needed so that user can cancel build tasks from queue.

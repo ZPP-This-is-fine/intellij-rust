@@ -5,6 +5,7 @@
 
 package org.rust.ide.presentation
 
+import com.intellij.openapi.util.NlsSafe
 import org.rust.ide.utils.import.ImportCandidate
 import org.rust.ide.utils.import.ImportCandidatesCollector
 import org.rust.ide.utils.import.ImportContext
@@ -26,11 +27,10 @@ import org.rust.lang.core.types.ty.TyPrimitive
 import org.rust.lang.core.types.ty.TyTypeParameter
 import org.rust.lang.utils.escapeRust
 import org.rust.lang.utils.evaluation.evaluate
-import org.rust.stdext.exhaustive
 import org.rust.stdext.joinToWithBuffer
 
 /** Return text of the element without switching to AST (loses non-stubbed parts of PSI) */
-fun RsTypeReference.getStubOnlyText(
+@NlsSafe fun RsTypeReference.getStubOnlyText(
     subst: Substitution = emptySubstitution,
     renderLifetimes: Boolean = true,
     shortPaths: Boolean = true,
@@ -45,6 +45,11 @@ fun RsValueParameterList.getStubOnlyText(
     renderLifetimes: Boolean = true
 ): String = TypeSubstitutingPsiRenderer(PsiRenderingOptions(renderLifetimes), subst).renderValueParameterList(this)
 
+fun RsExpr.getStubOnlyText(
+    subst: Substitution = emptySubstitution,
+    expectedTy: Ty = type
+): String = TypeSubstitutingPsiRenderer(PsiRenderingOptions(), subst).renderConstExpr(this, expectedTy)
+
 /** Return text of the element without switching to AST (loses non-stubbed parts of PSI) */
 fun RsTraitRef.getStubOnlyText(subst: Substitution = emptySubstitution, renderLifetimes: Boolean = true): String =
     buildString { TypeSubstitutingPsiRenderer(PsiRenderingOptions(renderLifetimes), subst).appendPath(this, path) }
@@ -54,6 +59,9 @@ fun RsPsiRenderer.renderTypeReference(ref: RsTypeReference): String =
 
 fun RsPsiRenderer.renderTraitRef(ref: RsTraitRef): String =
     buildString { appendPath(this, ref.path) }
+
+fun RsPsiRenderer.renderConstExpr(expr: RsExpr, expectedTy: Ty = expr.type): String =
+    buildString { appendConstExpr(this, expr, expectedTy) }
 
 fun RsPsiRenderer.renderValueParameterList(list: RsValueParameterList): String =
     buildString { appendValueParameterList(this, list) }
@@ -92,7 +100,7 @@ open class RsPsiRenderer(
         }
         if (fn.isActuallyExtern) {
             sb.append("extern ")
-            val abiName = fn.abiName
+            val abiName = fn.literalAbiName
             if (abiName != null) {
                 sb.append("\"")
                 sb.append(abiName)
@@ -210,6 +218,11 @@ open class RsPsiRenderer(
                     if (type != null) {
                         sb.append(": ")
                         appendTypeReference(sb, type)
+                    }
+                    val defaultValue = expr
+                    if (defaultValue != null) {
+                        sb.append(" = ")
+                        appendConstExpr(sb, defaultValue)
                     }
                 }
             }
@@ -489,7 +502,7 @@ open class RsPsiRenderer(
         }
     }
 
-    protected open fun appendConstExpr(
+    open fun appendConstExpr(
         sb: StringBuilder,
         expr: RsExpr,
         expectedTy: Ty = expr.type
@@ -518,15 +531,16 @@ open class RsPsiRenderer(
                 sb.append("'")
             }
             is RsStubLiteralKind.String -> {
-                if (kind.isByte) {
-                    sb.append("b")
+                when {
+                    kind.isByte -> sb.append("b")
+                    kind.isCStr -> sb.append("c")
                 }
                 sb.append('"')
                 sb.append(kind.value.orEmpty().escapeRust())
                 sb.append('"')
             }
-            null -> "{}"
-        }.exhaustive
+            null -> Unit
+        }
     }
 
     protected open fun appendBlockExpr(sb: StringBuilder, expr: RsBlockExpr) {

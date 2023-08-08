@@ -6,10 +6,19 @@
 package org.rust
 
 import com.intellij.codeInsight.template.impl.TemplateManagerImpl
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationInfo
+import com.intellij.openapi.application.invokeAndWaitIfNeeded
 import com.intellij.openapi.application.runWriteAction
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.RootsChangeRescanningInfo
+import com.intellij.openapi.roots.ModuleRootManager
+import com.intellij.openapi.roots.ex.ProjectRootManagerEx
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.util.EmptyRunnable
 import com.intellij.openapi.util.RecursionManager
+import com.intellij.openapi.vcs.ex.ProjectLevelVcsManagerEx
+import com.intellij.openapi.vcs.impl.ProjectLevelVcsManagerImpl
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileFilter
@@ -22,8 +31,8 @@ import com.intellij.util.ThrowableRunnable
 import com.intellij.util.text.SemVer
 import junit.framework.AssertionFailedError
 import org.intellij.lang.annotations.Language
+import org.junit.runner.RunWith
 import org.rust.cargo.CfgOptions
-import org.rust.cargo.project.model.RustcInfo
 import org.rust.cargo.project.model.impl.DEFAULT_EDITION_FOR_TESTS
 import org.rust.cargo.project.model.impl.testCargoProjects
 import org.rust.cargo.project.workspace.CargoWorkspace.Edition
@@ -35,6 +44,7 @@ import org.rust.ide.experiments.RsExperiments
 import org.rust.ide.settings.ExcludedPath
 import org.rust.ide.settings.ExclusionType
 import org.rust.ide.settings.RsCodeInsightSettings
+import org.rust.lang.core.macros.MacroExpansionScope
 import org.rust.lang.core.macros.macroExpansionManager
 import org.rust.openapiext.document
 import org.rust.openapiext.saveAllDocuments
@@ -43,31 +53,14 @@ import org.rust.stdext.RsResult
 import kotlin.reflect.KMutableProperty0
 import kotlin.reflect.full.createInstance
 
+@RunWith(RsJUnit4TestRunner::class)
 abstract class RsTestBase : BasePlatformTestCase(), RsTestCase {
 
     // Needed for assertion that the directory doesn't accidentally renamed during the test
     private var tempDirRootUrl: String? = null
     private var tempDirRoot: VirtualFile? = null
 
-    override fun getProjectDescriptor(): LightProjectDescriptor {
-        val baseDesc = run {
-            val annotation = findAnnotationInstance<ProjectDescriptor>() ?: return@run DefaultDescriptor
-            return@run (annotation.descriptor.objectInstance
-                ?: error("Only Kotlin objects defined with `object` keyword are allowed"))
-        }
-        val testWrapping = testWrapping
-        if (shouldSkipTestWrapping(testWrapping)) {
-            shouldSkipTestWithCurrentWrapping = true
-            return baseDesc
-        }
-        val wrappedDesc = (baseDesc as? RustProjectDescriptorBase)?.let { testWrapping.wrapProjectDescriptor(it) }
-        return if (wrappedDesc == null) {
-            shouldSkipTestWithCurrentWrapping = true
-            baseDesc
-        } else {
-            wrappedDesc
-        }
-    }
+    override fun getProjectDescriptor(): LightProjectDescriptor = RustLightProjectDescriptor
 
     open val testWrapping: TestWrapping get() = TestWrapping.NONE
     private var shouldSkipTestWithCurrentWrapping: Boolean = false
@@ -82,8 +75,7 @@ abstract class RsTestBase : BasePlatformTestCase(), RsTestCase {
     override fun setUp() {
         super.setUp()
 
-        (projectDescriptor as? RustProjectDescriptorBase)?.setUp(myFixture)
-
+        invokeAndWaitIfNeeded { setupRustProject() }
         setupMockRustcVersion()
         setupMockEdition()
         setupMockCfgOptions()
@@ -106,7 +98,18 @@ abstract class RsTestBase : BasePlatformTestCase(), RsTestCase {
     override fun tearDown() {
         val oldTempDirRootUrl = tempDirRootUrl
         val newTempDirRootUrl = tempDirRoot?.url
-        super.tearDown()
+
+        com.intellij.testFramework.common.runAll(
+            {
+                // Fixes flaky tests
+                (ProjectLevelVcsManagerEx.getInstance(project) as ProjectLevelVcsManagerImpl).waitForInitialized()
+            },
+            { super.tearDown() },
+            { checkTempDirs(oldTempDirRootUrl, newTempDirRootUrl) }
+        )
+    }
+
+    private fun checkTempDirs(oldTempDirRootUrl: String?, newTempDirRootUrl: String?) {
         // Check that temp root directory was not renamed during the test
         if (oldTempDirRootUrl != null && oldTempDirRootUrl != newTempDirRootUrl) {
             if (newTempDirRootUrl != null) {
@@ -116,11 +119,70 @@ abstract class RsTestBase : BasePlatformTestCase(), RsTestCase {
         }
     }
 
+    private val rustProjectDescriptor: RustProjectDescriptorBase
+        get() {
+            val baseDesc = run {
+                val annotation = findAnnotationInstance<ProjectDescriptor>() ?: return@run DefaultDescriptor
+                return@run (annotation.descriptor.objectInstance
+                    ?: error("Only Kotlin objects defined with `object` keyword are allowed"))
+            }
+            val testWrapping = testWrapping
+            if (shouldSkipTestWrapping(testWrapping)) {
+                shouldSkipTestWithCurrentWrapping = true
+                return baseDesc
+            }
+            val wrappedDesc = (baseDesc as? RustProjectDescriptorBase)?.let { testWrapping.wrapProjectDescriptor(it) }
+            return if (wrappedDesc == null) {
+                shouldSkipTestWithCurrentWrapping = true
+                baseDesc
+            } else {
+                wrappedDesc
+            }
+        }
+
+    private fun setupRustProject() {
+        if (projectDescriptor != RustLightProjectDescriptor) {
+            RustProjectDescriptorHolder.disposePreviousDescriptor()
+            return
+        }
+
+        val descriptor = rustProjectDescriptor
+        val projectDir = ModuleRootManager.getInstance(myFixture.module).contentEntries.single().file!!
+
+        val key = RustProjectDescriptorKey(project, projectDir, descriptor)
+
+        if (RustProjectDescriptorHolder.previousDescriptorKey != key) {
+            RustProjectDescriptorHolder.disposePreviousDescriptor()
+
+            val ws = descriptor.createTestCargoWorkspace(project, projectDir.url)
+            if (ws != null) {
+                project.testCargoProjects.createTestProject(projectDir, ws, descriptor.rustcInfo)
+            } else {
+                project.testCargoProjects.removeAllProjects()
+            }
+
+            val disposable = module.project.macroExpansionManager.setUnitTestExpansionModeAndDirectory(
+                MacroExpansionScope.ALL,
+                descriptor.macroExpansionCachingKey.orEmpty()
+            )
+            @Suppress("IncorrectParentDisposable") // It's fine for a unit test
+            Disposer.register(module, disposable)
+            RustProjectDescriptorHolder.disposable = disposable
+
+            runWriteAction {
+                ProjectRootManagerEx.getInstanceEx(project)
+                    .makeRootsChange(EmptyRunnable.getInstance(), RootsChangeRescanningInfo.TOTAL_RESCAN)
+            }
+
+            RustProjectDescriptorHolder.previousDescriptorKey = key
+        }
+        descriptor.setUp(myFixture)
+    }
+
     private fun setupMockRustcVersion() {
         val annotation = findAnnotationInstance<MockRustcVersion>() ?: return
         val (semVer, channel) = parse(annotation.rustcVersion)
-        val rustcInfo = RustcInfo("", RustcVersion(semVer, "", channel))
-        project.testCargoProjects.setRustcInfo(rustcInfo, testRootDisposable)
+        project.testCargoProjects.setRustcVersion(RustcVersion(semVer, "", channel), testRootDisposable)
     }
 
     private fun setupMockEdition() {
@@ -272,16 +334,20 @@ abstract class RsTestBase : BasePlatformTestCase(), RsTestCase {
 
     protected open val skipTestReason: String?
         get() {
-            val projectDescriptor = projectDescriptor as? RustProjectDescriptorBase
-            return projectDescriptor?.skipTestReason ?: run {
+            val projectDescriptor = rustProjectDescriptor
+
+            fun getMinRustVersionReason(): String? {
                 if (shouldSkipTestWithCurrentWrapping) {
                     return "this test is marked to skip the wrapping `${testWrapping.name}`"
                 }
-                checkRustcVersionRequirements {
+                return checkRustcVersionRequirements {
                     val rustcVersion = projectDescriptor?.rustcInfo?.version?.semver
                     if (rustcVersion != null) RsResult.Ok(rustcVersion) else RsResult.Err(null)
                 }
             }
+
+            return projectDescriptor.skipTestReason
+                ?: getMinRustVersionReason()
         }
 
     private fun shouldSkipTestWrapping(testWrapping: TestWrapping): Boolean {
@@ -513,6 +579,35 @@ abstract class RsTestBase : BasePlatformTestCase(), RsTestCase {
             optionProperty.set(oldValue)
         }
     }
+
+    /**
+     * Holds a static instance of [RustProjectDescriptorBase] between tests in order to speed up tests.
+     *
+     * (This is similar to [com.intellij.testFramework.LightPlatformTestCase.ourProject], see
+     * [com.intellij.testFramework.LightPlatformTestCase.doSetup])
+     */
+    private object RustProjectDescriptorHolder {
+        var previousDescriptorKey: RustProjectDescriptorKey? = null
+        var disposable: Disposable? = null
+
+        fun disposePreviousDescriptor() {
+            previousDescriptorKey = null
+            val disposable = disposable
+            if (disposable != null) {
+                Disposer.dispose(disposable)
+                this.disposable = null
+                checkMacroExpansionFileSystemAfterTest()
+            }
+        }
+    }
+
+    private data class RustProjectDescriptorKey(
+        val project: Project,
+        val projectDir: VirtualFile,
+        val descriptor: RustProjectDescriptorBase,
+    )
+
+    private object RustLightProjectDescriptor : LightProjectDescriptor()
 
     companion object {
         // XXX: hides `Assert.fail`

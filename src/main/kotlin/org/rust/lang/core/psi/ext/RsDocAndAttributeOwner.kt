@@ -355,6 +355,12 @@ class QueryAttributes<out T: RsMetaItemPsiOrStub>(
         return attrs.any { it.metaItemArgsList.any { item -> item.name == arg } }
     }
 
+    // `#[attributeName = "value"]`
+    fun hasAttributeWithValue(attributeName: String, value: String): Boolean {
+        val attrs = attrsByName(attributeName)
+        return attrs.any { it.value == value }
+    }
+
     // `#[attributeName(arg)]`
     fun getFirstArgOfSingularAttribute(attributeName: String): String? {
         return attrsByName(attributeName).singleOrNull()
@@ -392,9 +398,9 @@ class QueryAttributes<out T: RsMetaItemPsiOrStub>(
     val reprAttributes: Sequence<T>
         get() = attrsByName("repr")
 
-    // #[deprecated(since, note)], #[rustc_deprecated(since, reason)]
+    // #[deprecated(since, note)]
     val deprecatedAttribute: T?
-        get() = (attrsByName("deprecated") + attrsByName("rustc_deprecated")).firstOrNull()
+        get() = attrsByName("deprecated").firstOrNull()
 
     val cfgAttributes: Sequence<T>
         get() = attrsByName("cfg")

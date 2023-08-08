@@ -30,9 +30,9 @@ val baseVersion = when (baseIDE) {
 }
 
 val tomlPlugin = "org.toml.lang"
-val nativeDebugPlugin = "com.intellij.nativeDebug:${prop("nativeDebugPluginVersion")}"
+val nativeDebugPlugin: String by project
 val graziePlugin = "tanvd.grazi"
-val psiViewerPlugin = "PsiViewer:${prop("psiViewerPluginVersion")}"
+val psiViewerPlugin: String by project
 val intelliLangPlugin = "org.intellij.intelliLang"
 val copyrightPlugin = "com.intellij.copyright"
 val javaPlugin = "com.intellij.java"
@@ -49,11 +49,11 @@ val basePluginArchiveName = "intellij-rust"
 
 plugins {
     idea
-    kotlin("jvm") version "1.8.20"
+    kotlin("jvm") version "1.8.22"
     id("org.jetbrains.intellij") version "1.13.1"
     id("org.jetbrains.grammarkit") version "2022.3.1"
     id("net.saliman.properties") version "1.5.2"
-    id("org.gradle.test-retry") version "1.5.2"
+    id("org.gradle.test-retry") version "1.5.3"
 }
 
 idea {
@@ -77,6 +77,7 @@ allprojects {
         mavenCentral()
         maven("https://cache-redirector.jetbrains.com/repo.maven.apache.org/maven2")
         maven("https://cache-redirector.jetbrains.com/intellij-dependencies")
+        maven("https://jitpack.io")
     }
 
     idea {
@@ -121,6 +122,7 @@ allprojects {
         buildSearchableOptions { enabled = false }
 
         test {
+            systemProperty("java.awt.headless", "true")
             testLogging {
                 showStandardStreams = prop("showStandardStreams").toBoolean()
                 afterSuite(
@@ -192,6 +194,7 @@ allprojects {
 
     dependencies {
         compileOnly(kotlin("stdlib-jdk8"))
+        implementation("com.github.zpp-This-is-fine:build-server-protocol:resolved-targets-workspace")
         testOutput(sourceSets.getByName("test").output.classesDirs)
     }
 
@@ -207,10 +210,19 @@ allprojects {
 
         tasks.withType<Test>().configureEach {
             jvmArgs = listOf("-Xmx2g", "-XX:-OmitStackTraceInFastThrow")
+
             // We need to prevent the platform-specific shared JNA library to loading from the system library paths,
             // because otherwise it can lead to compatibility issues.
             // Also note that IDEA does the same thing at startup, and not only for tests.
             systemProperty("jna.nosys", "true")
+
+            // The factory should be set up automatically in `IdeaForkJoinWorkerThreadFactory.setupForkJoinCommonPool`,
+            // but when tests are launched by Gradle this may not happen because Gradle can use the pool earlier.
+            // Setting this factory is critical for `ReadMostlyRWLock` performance, so ensure it is properly set
+            systemProperty(
+                "java.util.concurrent.ForkJoinPool.common.threadFactory",
+                "com.intellij.concurrency.IdeaForkJoinWorkerThreadFactory"
+            )
             if (isTeamcity) {
                 // Make teamcity builds green if only muted tests fail
                 // https://youtrack.jetbrains.com/issue/TW-16784
@@ -272,7 +284,6 @@ project(":plugin") {
         implementation(project(":clion"))
         implementation(project(":debugger"))
         implementation(project(":profiler"))
-        implementation(project(":toml"))
         implementation(project(":copyright"))
         implementation(project(":coverage"))
         implementation(project(":intelliLang"))
@@ -398,16 +409,20 @@ project(":plugin") {
     task<RunIdeTask>("buildEventsScheme") {
         dependsOn(tasks.prepareSandbox)
         args("buildEventsScheme", "--outputFile=${buildDir.resolve("eventScheme.json").absolutePath}", "--pluginId=org.rust.lang")
-        // BACKCOMPAT: 2022.3. Update value to 231 and this comment
+        // BACKCOMPAT: 2023.1. Update value to 232 and this comment
         // `IDEA_BUILD_NUMBER` variable is used by `buildEventsScheme` task to write `buildNumber` to output json.
         // It will be used by TeamCity automation to set minimal IDE version for new events
-        environment("IDEA_BUILD_NUMBER", "223")
+        environment("IDEA_BUILD_NUMBER", "231")
     }
 }
 
 project(":$grammarKitFakePsiDeps")
 
 project(":") {
+    intellij {
+        plugins.set(listOf(tomlPlugin))
+    }
+
     sourceSets {
         main {
             if (channel == "nightly" || channel == "dev") {
@@ -429,7 +444,10 @@ project(":") {
         api("io.github.z4kn4fein:semver:1.4.2") {
             excludeKotlinDeps()
         }
-        testImplementation("com.squareup.okhttp3:mockwebserver:4.10.0")
+        implementation("org.eclipse.jgit:org.eclipse.jgit:6.5.0.202303070854-r") {
+            exclude("org.slf4j")
+        }
+        testImplementation("com.squareup.okhttp3:mockwebserver:4.11.0")
     }
 
     tasks {
@@ -520,8 +538,8 @@ project(":debugger") {
 
     dependencies {
         implementation(project(":"))
-        antlr("org.antlr:antlr4:4.12.0")
-        implementation("org.antlr:antlr4-runtime:4.12.0")
+        antlr("org.antlr:antlr4:4.13.0")
+        implementation("org.antlr:antlr4-runtime:4.13.0")
         testImplementation(project(":", "testOutput"))
     }
     tasks {
@@ -552,26 +570,6 @@ project(":profiler") {
     dependencies {
         implementation(project(":"))
         testImplementation(project(":", "testOutput"))
-    }
-}
-
-project(":toml") {
-    intellij {
-        plugins.set(listOf(tomlPlugin))
-    }
-    dependencies {
-        implementation("org.eclipse.jgit:org.eclipse.jgit:6.5.0.202303070854-r") { exclude("org.slf4j") }
-
-        implementation(project(":"))
-        testImplementation(project(":", "testOutput"))
-    }
-    tasks {
-        // Set custom plugin directory name.
-        // Otherwise, `prepareSandbox`/`prepareTestingSandbox` tasks merge directories
-        // of `toml` plugin and `toml` module because of the same name into single one that's not expected
-        withType<PrepareSandboxTask> {
-            pluginName.set("rust-toml")
-        }
     }
 }
 

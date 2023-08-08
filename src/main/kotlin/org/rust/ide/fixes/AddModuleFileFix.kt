@@ -6,12 +6,12 @@
 package org.rust.ide.fixes
 
 import com.intellij.codeInsight.intention.FileModifier
-import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement
+import com.intellij.codeInspection.util.IntentionName
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDirectory
-import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import org.rust.RsBundle
 import org.rust.ide.refactoring.RsPromoteModuleToDirectoryAction
 import org.rust.lang.RsConstants.MOD_RS_FILE
 import org.rust.lang.core.psi.RsFile
@@ -24,11 +24,12 @@ class AddModuleFileFix(
     modDecl: RsModDeclItem,
     private val expandModuleFirst: Boolean,
     private val location: Location = Location.File
-) : LocalQuickFixAndIntentionActionOnPsiElement(modDecl) {
-    private val text = "Create module file `${modDecl.path}`"
+) : RsQuickFixBase<RsModDeclItem>(modDecl) {
+    @IntentionName
+    private val text = RsBundle.message("intention.name.create.module.file", modDecl.path)
     override fun getText() = text
 
-    override fun getFamilyName() = "Create module file"
+    override fun getFamilyName() = RsBundle.message("intention.family.name.create.module.file")
 
     // No intention preview because it creates new file
     override fun getFileModifierForPreview(target: PsiFile): FileModifier? = null
@@ -50,29 +51,22 @@ class AddModuleFileFix(
             Location.Directory -> "$name/mod.rs"
         }
 
-    override fun invoke(
-        project: Project,
-        file: PsiFile,
-        editor: Editor?,
-        startElement: PsiElement,
-        endElement: PsiElement
-    ) {
-        val modDecl = startElement as RsModDeclItem
+    override fun invoke(project: Project, editor: Editor?, element: RsModDeclItem) {
         if (expandModuleFirst) {
-            val containingFile = modDecl.containingFile as RsFile
+            val containingFile = element.containingFile as RsFile
             RsPromoteModuleToDirectoryAction.expandModule(containingFile)
         }
 
-        val existing = modDecl.reference.resolve()?.containingFile
+        val existing = element.reference.resolve()?.containingFile
         if (existing != null) {
             existing.navigate(true)
             return
         }
 
-        val dir = modDecl.containingMod.getOwnedDirectory(createIfNotExists = true) ?: return
+        val dir = element.containingMod.getOwnedDirectory(createIfNotExists = true) ?: return
         when (location) {
-            Location.File -> dir.createFile("${modDecl.name}.rs")
-            Location.Directory -> dir.getOrCreateSubdirectory("${modDecl.name}").createFile(MOD_RS_FILE)
+            Location.File -> dir.createFile("${element.name}.rs")
+            Location.Directory -> dir.getOrCreateSubdirectory("${element.name}").createFile(MOD_RS_FILE)
         }.navigate(true)
     }
 

@@ -67,15 +67,14 @@ def run_lldb_tests(clion_version: str):
         python = "python"
     elif host_os == OS.Linux:
         lldb_path = path.abspath(f"deps/clion-{clion_version}/bin/lldb/linux/{arch_name}/lib/python3.8/site-packages")
-        # BACKCOMPAT: 2022.3. Since 2022.3.2 `os.path.exists(lldb_path)` should be always true
-        if not path.exists(lldb_path):
-            lldb_path = path.abspath(f"deps/clion-{clion_version}/bin/lldb/linux/lib/python3.8/site-packages")
         python = "python3"
     elif host_os == OS.Windows:
         lldb_bundle_path = path.abspath(f"deps/clion-{clion_version}/bin/lldb/win/{arch_name}")
         # Create symlink to allow `lldb` Python module perform `import _lldb` inside
-        # TODO: Drop when this is implemented on CLion side
-        os.symlink(f"{lldb_bundle_path}/bin/liblldb.dll", f"{lldb_bundle_path}/lib/site-packages/lldb/_lldb.pyd")
+        # BACKCOMPAT: 2023.1. `lib/site-packages/lldb/_lldb.pyd` exists since CLion 2023.1
+        lldb_pyd = f"{lldb_bundle_path}/lib/site-packages/lldb/_lldb.pyd"
+        if not path.exists(lldb_pyd):
+            os.symlink(f"{lldb_bundle_path}/bin/liblldb.dll", f"{lldb_bundle_path}/lib/site-packages/lldb/_lldb.pyd")
 
         lldb_path = f"{lldb_bundle_path}/lib/site-packages"
         python = f"{lldb_bundle_path}/bin/python.exe"
@@ -97,9 +96,6 @@ def run_gdb_tests(clion_version: str):
         gdb_binary = path.abspath(f"deps/clion-{clion_version}/bin/gdb/mac/bin/gdb")
     elif host_os == OS.Linux:
         gdb_binary = path.abspath(f"deps/clion-{clion_version}//bin/gdb/linux/{arch_name}/bin/gdb")
-        # BACKCOMPAT: 2022.3. Since 2022.3.2 `os.path.exists(gdb_binary)` should be always true
-        if not path.exists(gdb_binary):
-            gdb_binary = path.abspath(f"deps/clion-{clion_version}/bin/gdb/linux/bin/gdb")
     elif host_os == OS.Windows:
         print("GDB pretty-printers tests are not supported yet for Windows")
         return

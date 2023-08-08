@@ -5,13 +5,12 @@
 
 package org.rust.ide.fixes
 
-import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiErrorElement
-import com.intellij.psi.PsiFile
 import com.intellij.psi.util.parentOfType
+import org.rust.RsBundle
 import org.rust.ide.annotator.getFunctionCallContext
 import org.rust.ide.utils.template.buildAndRunTemplate
 import org.rust.lang.core.psi.*
@@ -24,21 +23,15 @@ import org.rust.lang.core.psi.ext.getLocalVariableVisibleBindings
 import org.rust.lang.core.resolve.knownItems
 import org.rust.lang.core.types.inference
 import org.rust.lang.core.types.ty.Ty
-import org.rust.lang.core.types.ty.TyFunction
+import org.rust.lang.core.types.ty.TyFunctionBase
 import org.rust.lang.core.types.type
 
-class FillFunctionArgumentsFix(element: PsiElement) : LocalQuickFixAndIntentionActionOnPsiElement(element) {
-    override fun getText(): String = "Fill missing arguments"
+class FillFunctionArgumentsFix(element: PsiElement) : RsQuickFixBase<PsiElement>(element) {
+    override fun getText(): String = RsBundle.message("intention.name.fill.missing.arguments")
     override fun getFamilyName(): String = text
 
-    override fun invoke(
-        project: Project,
-        file: PsiFile,
-        editor: Editor?,
-        startElement: PsiElement,
-        endElement: PsiElement
-    ) {
-        val arguments = startElement.parentOfType<RsValueArgumentList>(true) ?: return
+    override fun invoke(project: Project, editor: Editor?, element: PsiElement) {
+        val arguments = element.parentOfType<RsValueArgumentList>(true) ?: return
         val parent = arguments.parent as? RsElement ?: return
 
         val requiredParameterCount = arguments.getFunctionCallContext()?.expectedParameterCount ?: return
@@ -59,12 +52,12 @@ class FillFunctionArgumentsFix(element: PsiElement) : LocalQuickFixAndIntentionA
         var childIndex = 0
 
         while (parameterIndex < parameters.size) {
-            val element = children.getOrNull(childIndex)
+            val child = children.getOrNull(childIndex)
             childIndex++
 
-            val isComma = element?.elementType == COMMA ||
-                (element is PsiErrorElement && element.childrenWithLeaves.firstOrNull()?.elementType == COMMA)
-            val atEnd = element == null || element.elementType == RPAREN
+            val isComma = child?.elementType == COMMA ||
+                (child is PsiErrorElement && child.childrenWithLeaves.firstOrNull()?.elementType == COMMA)
+            val atEnd = child == null || child.elementType == RPAREN
             when {
                 // We are either at the end or at a comma.
                 // If we are missing an argument for the current parameter, we have to insert it.
@@ -76,8 +69,8 @@ class FillFunctionArgumentsFix(element: PsiElement) : LocalQuickFixAndIntentionA
                     }
                     parameterIndex++
                 }
-                element is RsExpr -> {
-                    argumentList.add(element)
+                child is RsExpr -> {
+                    argumentList.add(child)
                     argumentIndex++
                 }
             }
@@ -93,7 +86,7 @@ class FillFunctionArgumentsFix(element: PsiElement) : LocalQuickFixAndIntentionA
 
 private fun getParameterTypes(element: PsiElement): List<Ty>? {
     return when (element) {
-        is RsCallExpr -> (element.expr.type as? TyFunction)?.paramTypes
+        is RsCallExpr -> (element.expr.type as? TyFunctionBase)?.paramTypes
         is RsMethodCall -> element.inference?.getResolvedMethodType(element)?.paramTypes?.drop(1)
         else -> null
     }

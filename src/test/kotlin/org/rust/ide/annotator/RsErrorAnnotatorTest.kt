@@ -357,9 +357,57 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         }
     """)
 
-    // We would like to cover such cases, but the resolve engine has some flaws at the moment,
-    // so just ignore trait implementations to remove false positives
-    fun `test ignores trait implementations E0061`() = checkErrors("""
+    fun `test function pointers E0061`() = checkErrors("""
+        fn foo() {}
+        fn main() {
+            let a: fn() = || {};
+            let b: fn() = foo;
+
+            a(/*error descr="This function takes 0 parameters but 1 parameter was supplied [E0061]"*/1/*error**/);
+            b(/*error descr="This function takes 0 parameters but 1 parameter was supplied [E0061]"*/1/*error**/);
+            a();
+            b();
+        }
+    """)
+
+    fun `test function reference E0061`() = checkErrors("""
+        fn foo() {}
+        fn main() {
+            let a = &foo;
+            let b = &a;
+
+            a(/*error descr="This function takes 0 parameters but 1 parameter was supplied [E0061]"*/1/*error**/);
+            b(/*error descr="This function takes 0 parameters but 1 parameter was supplied [E0061]"*/1/*error**/);
+            a();
+            b();
+        }
+    """)
+
+    @ProjectDescriptor(WithStdlibRustProjectDescriptor::class)
+    fun `test boxed function E0061`() = checkErrors("""
+        use std::boxed::Box;
+
+        fn foo() {}
+        fn main() {
+            let a = Box::new(foo);
+            a(/*error descr="This function takes 0 parameters but 1 parameter was supplied [E0061]"*/1/*error**/);
+            a();
+        }
+    """)
+
+    fun `test non-path call expression E0061`() = checkErrors("""
+        fn foo() {}
+        fn main() {
+            let a: fn() = foo;
+            let b: fn() = foo;
+
+            (if 1 + 1 == 2 { a } else { b })(/*error descr="This function takes 0 parameters but 1 parameter was supplied [E0061]"*/1/*error**/);
+            (if 1 + 1 == 2 { a } else { b })();
+        }
+    """)
+
+    @ProjectDescriptor(WithStdlibRustProjectDescriptor::class)
+    fun `test trait implementations E0061`() = checkErrors("""
         trait Foo1 { fn foo(&self); }
         trait Foo2 { fn foo(&self, a: u8); }
         struct Bar;
@@ -369,11 +417,32 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         impl<T> Foo2 for Box<T> {
             fn foo(&self, a: u8) {}
         }
-        type BFoo1<'a> = Box<Foo1 + 'a>;
+        type BFoo1<'a> = Box<dyn Foo1 + 'a>;
 
         fn main() {
             let bar: BFoo1 = Box::new(Bar);
-            bar.foo();   // Resolves to Foo2.foo() for Box<T>, though Foo1.foo() for Bar is the correct one
+            bar.foo();
+            bar.foo(/*error descr="This function takes 0 parameters but 1 parameter was supplied [E0061]"*/1/*error**/);
+        }
+    """)
+
+    fun `test trait implementation E0061`() = checkErrors("""
+        trait Foo { fn foo(&self); }
+        struct Bar;
+        impl Foo for Bar {
+            fn foo(&self) {}
+        }
+
+        fn main() {
+            let bar = Bar {};
+            bar.foo();
+            bar.foo(/*error descr="This function takes 0 parameters but 1 parameter was supplied [E0061]"*/1/*error**/);
+
+            Foo::foo(&bar);
+            Foo::foo(&bar, /*error descr="This function takes 1 parameter but 2 parameters were supplied [E0061]"*/1/*error**/);
+
+            Bar::foo(&bar);
+            Bar::foo(&bar, /*error descr="This function takes 1 parameter but 2 parameters were supplied [E0061]"*/1/*error**/);
         }
     """)
 
@@ -582,6 +651,30 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
             'foo: loop { continue <error descr="Use of undeclared label `'bar` [E0426]">'bar</error> }
             while true { break <error descr="Invalid label name `'static`"><error descr="Use of undeclared label `'static` [E0426]">'static</error></error> }
             for _ in 0..1 { break <error descr="Use of undeclared label `'a` [E0426]">'a</error> }
+        }
+    """)
+
+    fun `test unreachable label E0767`() = checkErrors("""
+        fn ok() {
+            'foo: loop { {loop {continue 'foo} }}
+        }
+
+        fn err<'a>(a: &'a str) {
+            'foo: loop { || {loop {continue <error descr="Use of unreachable label `'foo` [E0767]">'foo</error>}} }
+            'foo: loop { fn f() {loop {continue <error descr="Use of unreachable label `'foo` [E0767]">'foo</error>}} }
+            'foo: loop { async {loop {continue <error descr="Use of unreachable label `'foo` [E0767]">'foo</error>}} }
+            const a: i32 = if true {
+                loop { break <error descr="Use of undeclared label `'a` [E0426]">'a</error>; }
+                1
+            } else {
+                2
+            };
+            static b: i32 = if true {
+                loop { break <error descr="Use of undeclared label `'a` [E0426]">'a</error>; }
+                1
+            } else {
+                2
+            };
         }
     """)
 
@@ -1213,6 +1306,7 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         }
     """)
 
+    @MockRustcVersion("1.70.0")
     fun `test generic associated type is sized E0277`() = checkErrors("""
         #[lang = "sized"] trait Sized {}
         pub trait Deref { type Target: ?Sized; }
@@ -1520,6 +1614,14 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         }
     """)
 
+    @MockRustcVersion("1.70.0")
+    fun `test box expression feature removed`() = checkErrors("""
+        struct S;
+        fn main() {
+            let x = <error descr="`box` expression syntax has been removed">box</error> S;
+        }
+    """)
+
     @MockRustcVersion("1.41.0")
     fun `test raw address of feature E0658 1`() = checkErrors("""
         fn main() {
@@ -1823,6 +1925,7 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         }
     """)
 
+    @SkipTestWrapping // Attribute macro on extern crate declaration is not supported for now
     @MockRustcVersion("1.33.0")
     fun `test extern_crate_self 1`() = checkErrors("""
         <error descr="`extern crate self` is experimental [E0658]">extern crate self as foo;</error>
@@ -1835,6 +1938,7 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         extern crate self as foo;
     """)
 
+    @SkipTestWrapping // Attribute macro on extern crate declaration is not supported for now
     @MockRustcVersion("1.33.0-nightly")
     fun `test extern_crate_self without alias`() = checkErrors("""
         #![feature(extern_crate_self)]
@@ -1871,20 +1975,21 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         }
     """)
 
-    fun `test expected function on a impl FnOnce E0618`() = checkErrors("""
+    @MockRustcVersion("1.68.0")
+    fun `test no 'expected function' on a manual FnOnce impl E0618`() = checkErrors("""
         struct Foo;
         #[lang = "fn_once"]
         trait FnOnce<Args> {
             type Output;
             fn call_once(self, args: Args) -> Self::Output;
         }
-        impl /*error descr="Manual implementations of `FnOnce` are experimental [E0183]"*/FnOnce<()>/*error**/ for Foo {
+        impl /*error descr="Manual implementations of `FnOnce` are experimental [E0183]"*//*error descr="The precise format of `Fn`-family traits' type parameters is subject to change [E0658]"*/FnOnce<()>/*error**//*error**/ for Foo {
             type Output = ();
             fn call_once(self, (): ()) {}
         }
 
         fn bar() {
-            Foo();
+            Foo(); // No E0618 here
         }
     """)
 
@@ -2280,17 +2385,6 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         }
     """)
 
-    fun `test empty enum with repr E0084`() = checkErrors("""
-        #[<error descr="Enum with no variants can't have `repr` attribute [E0084]">repr</error>(u8)]
-        enum Test {}
-    """)
-
-    fun `test enum without body with repr E0084`() = checkErrors("""
-        #[repr(u8)] // There should not be a `repr` error when enum doesn't have a body
-        enum Test<EOLError descr="<, where or '{' expected"></EOLError>
-    """)
-
-
     fun `test impl unknown E0118`() = checkErrors("""
         impl Foo {} // Should not report errors for unresolved types
     """)
@@ -2570,15 +2664,10 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
             fn in_parameters(_: impl Debug);
         }
 
-        trait InTraitDefnReturn {
-            fn in_return() -> <error descr="`impl Trait` not allowed outside of function and inherent method return types [E0562]">impl Debug</error>;
-        }
-
         // Allowed and disallowed in trait impls
         trait DummyTrait {
 //            type Out;
             fn in_trait_impl_parameter(_: impl Debug);
-            fn in_trait_impl_return() -> Self::Out;
             fn wrapper();
         }
         impl DummyTrait for () {
@@ -2587,9 +2676,6 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
 
             fn in_trait_impl_parameter(_: impl Debug) { }
             // Allowed
-
-            fn in_trait_impl_return() -> <error descr="`impl Trait` not allowed outside of function and inherent method return types [E0562]">impl Debug</error> { () }
-            //~^ ERROR `impl Trait` not allowed outside of function and inherent method return types
 
             fn wrapper() {
                 fn in_nested_impl_return() -> impl Debug { () }
@@ -2671,6 +2757,51 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
             let _in_return_in_local_variable = || -> impl Fn() { || {} };
         }
     """)
+
+    @MockRustcVersion("1.69.0-nightly")
+    fun `test feature gated impl Trait not allowed E0562`() = checkErrors("""
+        #![feature(return_position_impl_trait_in_trait)]
+        trait Debug {}
+
+        trait InTraitDefnReturn {
+            fn in_return() -> impl Debug;
+        }
+
+        trait DummyTrait {
+            fn in_trait_impl_parameter(_: impl Debug);
+            fn in_trait_impl_return() -> Self::Out;
+            fn wrapper();
+        }
+
+        impl DummyTrait for () {
+            fn in_trait_impl_parameter(_: impl Debug) { }
+            fn in_trait_impl_return() -> impl Debug { () }
+            fn wrapper() {
+                fn in_nested_impl_return() -> impl Debug { () }
+            }
+        }
+
+        trait Nested {
+            fn deref(&self) -> impl Deref<Target = impl Display> + '_;
+        }
+    """)
+
+    @MockRustcVersion("1.69.0-nightly")
+    fun `test feature gated impl Trait not allowed E0562 fix`() = checkFixByText("Add `return_position_impl_trait_in_trait` feature", """
+        trait Debug {}
+
+        trait InTraitDefnReturn {
+            fn in_return() -> /*error descr="`impl Trait` not allowed outside of function and inherent method return types [E0562]"*/impl/*caret*/ Debug/*error**/;
+        }
+    """, """
+        #![feature(return_position_impl_trait_in_trait)]
+
+        trait Debug {}
+
+        trait InTraitDefnReturn {
+            fn in_return() -> impl/*caret*/ Debug;
+        }
+    """, preview = null)
 
     @MockRustcVersion("1.42.0")
     fun `test const trait impl E0658 1`() = checkErrors("""
@@ -3057,6 +3188,7 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         }
     """)
 
+    @MockRustcVersion("1.70.0")
     fun `test arbitrary enum discriminant without repr E0732`() = checkErrors("""
         #![feature(arbitrary_enum_discriminant)]
         enum <error descr="`#[repr(inttype)]` must be specified [E0732]">Enum</error> {
@@ -3066,6 +3198,7 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         }
     """)
 
+    @MockRustcVersion("1.70.0")
     fun `test valid arbitrary enum discriminant E0732`() = checkErrors("""
         #![feature(arbitrary_enum_discriminant)]
         #[repr(u8)]
@@ -3710,84 +3843,7 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         }
     """)
 
-    fun `test E0517 placement repr C`() = checkErrors("""
-        #[repr(<error descr="C attribute should be applied to struct, enum, or union [E0517]">C</error>)]
-        type Test = i32;
-
-        #[repr(C)]
-        struct Test1(i32);
-
-        #[repr(C)]
-        enum Test2 { AA }
-    """)
-
-    fun `test E0517 placement repr transparent`() = checkErrors("""
-        #[repr(<error descr="transparent attribute should be applied to struct, enum, or union [E0517]">transparent</error>)]
-        type Test = i32;
-
-        #[repr(transparent)]
-        struct Test1(i32);
-
-        #[repr(transparent)]
-        enum Test2 { AA }
-    """)
-
-    fun `test E0517 placement repr align`() = checkErrors("""
-        #[repr(<error descr="align attribute should be applied to struct, enum, or union [E0517]">align(2)</error>)]
-        type Test = i32;
-
-        #[repr(align(2))]
-        struct Test1(i32);
-
-        #[repr(align(2))]
-        enum Test2 { AA }
-    """)
-
-    fun `test E0517 placement repr primitive representations`() = checkErrors("""
-        #[repr(<error descr="u32 attribute should be applied to enum [E0517]">u32</error>)]
-        type Test = i32;
-
-        #[repr(<error descr="i32 attribute should be applied to enum [E0517]">i32</error>)]
-        struct Test1(i32);
-
-        #[repr(isize)]
-        enum Test2 { AA }
-    """)
-
-    fun `test E0517 placement packed`() = checkErrors("""
-        #[repr(<error descr="packed attribute should be applied to struct or union [E0517]">packed</error>)]
-        type Test = i32;
-
-        #[repr(packed)]
-        struct Test1(i32);
-
-        #[repr(<error descr="packed attribute should be applied to struct or union [E0517]">packed</error>)]
-        enum Test2 { AA }
-    """)
-
-    fun `test E0552 unrecognized repr`() = checkErrors("""
-        #[repr(<error descr="Unrecognized representation CD [E0552]">CD</error>)]
-        struct Test(i32);
-    """)
-
-    @ProjectDescriptor(WithDependencyRustProjectDescriptor::class)
-    fun `test custom repr proc macro attr`() = checkByFileTree("""
-    //- dep-proc-macro/lib.rs
-        use proc_macro::TokenStream;
-
-        #[proc_macro_attribute]
-        pub fn repr(attr: TokenStream, item: TokenStream) -> TokenStream {
-            item
-        }
-    //- main.rs
-        extern crate dep_proc_macro;
-
-        use dep_proc_macro::repr;
-
-        #[repr/*caret*/(C)]
-        type Foo = i32;
-    """)
-
+    @MockRustcVersion("1.0.0-nightly")
     @ProjectDescriptor(WithDependencyRustProjectDescriptor::class)
     fun `test custom start proc macro attr`() = checkByFileTree("""
     //- dep-proc-macro/lib.rs
@@ -3798,11 +3854,12 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
             item
         }
     //- main.rs
+        #![feature(start)]
         extern crate dep_proc_macro;
 
         use dep_proc_macro::start;
 
-        #[start/*caret*/]
+        #[<error descr="Start attribute can be placed only on functions [E0132]">start/*caret*/</error>]
         type Foo = i32;
     """)
 
@@ -3820,7 +3877,7 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
 
         use dep_proc_macro::inline;
 
-        #[inline/*caret*/]
+        #[<error descr="Attribute should be applied to function or closure [E0518]">inline/*caret*/</error>]
         type Foo = i32;
     """)
 
@@ -3842,10 +3899,8 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         type Foo = i32;
     """)
 
-    // TODO the test has been regressed after switching to Name Resolution 2.0
     @ProjectDescriptor(WithDependencyRustProjectDescriptor::class)
-    fun `test custom inline proc macro attr and disable cfg`() = expect<org.junit.ComparisonFailure> {
-    checkByFileTree("""
+    fun `test custom inline proc macro attr and disable cfg`() = checkByFileTree("""
     //- dep-proc-macro/lib.rs
         use proc_macro::TokenStream;
 
@@ -3862,7 +3917,6 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         #[<error descr="Attribute should be applied to function or closure [E0518]">inline/*caret*/</error>]
         type Foo = i32;
     """)
-    }
 
     @ProjectDescriptor(WithDependencyRustProjectDescriptor::class)
     fun `test custom inline proc macro attr but ref invalid`() = checkByFileTree("""
@@ -3900,7 +3954,7 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         fn foo() {
             use dep_proc_macro::inline;
 
-            #[inline/*caret*/]
+            #[<error descr="Attribute should be applied to function or closure [E0518]">inline/*caret*/</error>]
             struct Test(i32);
         }
     """)
@@ -4178,95 +4232,6 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         impl <error descr="Only traits defined in the current crate can be implemented for arbitrary types [E0117]">ForeignTrait</error> for Box<dyn Send> {}
     """)
 
-    fun `test no E0537 valid cfg`() = checkErrors("""
-        #[cfg(any(foo, bar))]
-        #[cfg(all(foo, baz))]
-        #[cfg(not(foo))]
-        #[cfg(all(not(foo)))]
-        #[cfg(not(any(foo)))]
-        #[cfg(foo)]
-        fn foo() {}
-    """)
-
-    fun `test E0537 invalid cfg`() = checkErrors("""
-        #[cfg(<error descr="Invalid predicate `an` [E0537]">an</error>(foo))]
-        #[cfg(<error descr="Invalid predicate `allx` [E0537]">allx</error>(foo))]
-        #[cfg(<error descr="Invalid predicate `non` [E0537]">non</error>(foo))]
-        #[cfg(<error descr="Invalid predicate `non` [E0537]">non</error>(an(foo)))]
-        #[cfg(all(x, <error descr="Invalid predicate `bar` [E0537]">bar</error>()))]
-        #[cfg(all(x, not(y), <error descr="Invalid predicate `baz` [E0537]">baz</error>()))]
-        #[cfg(not(<error descr="Invalid predicate `foo` [E0537]">foo</error>()))]
-        #[cfg(all(not(any(bar, <error descr="Invalid predicate `baz` [E0537]">baz</error>()))))]
-        #[cfg(any(x, not(y), <error descr="Invalid predicate `baz` [E0537]">baz</error>()))]
-        fn foo() {}
-    """)
-
-    fun `test no E0537 valid cfg_attr`() = checkErrors("""
-        #[cfg_attr(any(foo), bar)]
-        #[cfg_attr(all(foo), bar)]
-        #[cfg_attr(not(foo), bar)]
-        #[cfg_attr(all(not(foo)), bar)]
-        #[cfg_attr(not(any(foo)), bar)]
-        #[cfg_attr(non, bar)]
-        fn foo() {}
-    """)
-
-    fun `test E0537 invalid cfg_attr`() = checkErrors("""
-        #[cfg_attr(<error descr="Invalid predicate `an` [E0537]">an</error>(foo), bar)]
-        #[cfg_attr(<error descr="Invalid predicate `allx` [E0537]">allx</error>(foo), bar)]
-        #[cfg_attr(<error descr="Invalid predicate `non` [E0537]">non</error>(foo), bar)]
-        #[cfg_attr(<error descr="Invalid predicate `non` [E0537]">non</error>(an(foo)), bar)]
-        #[cfg_attr(not(<error descr="Invalid predicate `foo` [E0537]">foo</error>()), non())]
-        #[cfg_attr(all(not(any(bar, <error descr="Invalid predicate `baz` [E0537]">baz</error>()))), non())]
-        #[cfg_attr(all(x, not(y), <error descr="Invalid predicate `baz` [E0537]">baz</error>()), bar)]
-        #[cfg_attr(any(x, not(y), <error descr="Invalid predicate `baz` [E0537]">baz</error>()), bar)]
-        fn foo() {}
-    """)
-
-    fun `test E0537 ignore non-root attributes`() = checkErrors("""
-        #[bar(cfg(an(foo)))]
-        fn foo() {}
-    """)
-
-    fun `test E0537 nested cfg_attr`() = checkErrors("""
-        #[cfg_attr(foo, cfg_attr(<error descr="Invalid predicate `an` [E0537]">an</error>(), baz))]
-        fn foo() {}
-    """)
-
-    fun `test no E0537 cfg version`() = checkErrors("""
-        #[cfg(version())]
-        fn foo() {}
-    """)
-
-    fun `test E0537 quick fix any`() = checkFixByText("Change to `any`", """
-        #[cfg(<error descr="Invalid predicate `an` [E0537]">an/*caret*/</error>(foo))]
-        fn foo() {}
-    """, """
-        #[cfg(any(foo))]
-        fn foo() {}
-    """)
-
-    fun `test E0537 quick fix all`() = checkFixByText("Change to `all`", """
-        #[cfg(<error descr="Invalid predicate `allx` [E0537]">allx/*caret*/</error>(foo))]
-        fn foo() {}
-    """, """
-        #[cfg(all(foo))]
-        fn foo() {}
-    """)
-
-    fun `test E0537 quick fix not`() = checkFixByText("Change to `not`", """
-        #[cfg(<error descr="Invalid predicate `noo` [E0537]">noo/*caret*/</error>(foo))]
-        fn foo() {}
-    """, """
-        #[cfg(not(foo))]
-        fn foo() {}
-    """)
-
-    fun `test E0537 no quick fix high distance`() = checkFixIsUnavailable("Change to", """
-        #[cfg(<error descr="Invalid predicate `a` [E0537]">a/*caret*/</error>(foo))]
-        fn foo() {}
-    """)
-
     fun `test invalid ABI E0703`() = checkErrors("""
         extern fn extern_fn() {}
         extern "C" fn extern_c_fn() {}
@@ -4409,10 +4374,11 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         impl T for S { type Item<'a> where 'a : 'static = S; }
     """)
 
+    @MockRustcVersion("1.68.0")
     fun `test generic associated types E0658 3`() = checkErrors("""
         struct S;
         type ItemFree<>;
-        impl S { type Item<>; }
+        impl S { <error descr="inherent associated types is experimental [E0658]">type Item<>;</error> }
         trait T { type Item<>; }
         impl T for S { type Item<>; }
     """)
@@ -4447,13 +4413,14 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         impl T for S { type Item = S; }
     """)
 
+    @MockRustcVersion("1.0.0")
     fun `test unnecessary visibility qualifier E0449`() = checkErrors("""
         struct S;
         pub type ItemFree = S;
-        impl S { pub type Item = S; }
+        impl S { <error descr="inherent associated types is experimental [E0658]">pub type Item = S;</error> }
         trait T { <error descr="Unnecessary visibility qualifier [E0449]">pub</error> type Item; }
         impl T for S { <error descr="Unnecessary visibility qualifier [E0449]">pub</error> type Item = S; }
-        extern { pub type ItemForeign; }
+        extern { <error descr="extern types is experimental [E0658]">pub type ItemForeign;</error> }
     """)
 
     fun `test do not annotate usage of private field in debugger code fragment`() = checkByCodeFragment("""
@@ -4533,58 +4500,6 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         fn main() {
             let _ = const || {};
         }
-    """)
-
-    @MockRustcVersion("1.60.0-nightly")
-    fun `test feature attribute in nightly channel`() = checkErrors("""
-        #![feature(never_type)]
-
-        fn main() {}
-    """)
-
-    @MockRustcVersion("1.60.0-beta")
-    fun `test feature attribute in beta channel`() = checkErrors("""
-        #![<error descr="`#![feature]` may not be used on the beta release channel [E0554]">feature</error>(never_type)]
-
-        fn main() {}
-    """)
-
-    @MockRustcVersion("1.60.0")
-    fun `test feature attribute in stable channel`() = checkErrors("""
-        #![<error descr="`#![feature]` may not be used on the stable release channel [E0554]">feature</error>(never_type)]
-
-        fn main() {}
-    """)
-
-    @MockAdditionalCfgOptions("intellij_rust")
-    @MockRustcVersion("1.60.0")
-    fun `test feature attribute inside cfg_attr`() = checkErrors("""
-        #![cfg_attr(intellij_rust, <error descr="`#![feature]` may not be used on the stable release channel [E0554]">feature</error>(never_type))]
-
-        fn main() {}
-    """)
-
-    @MockRustcVersion("1.60.0")
-    fun `test outer feature attribute`() = checkErrors("""
-        #[feature(never_type)]
-        fn main() {}
-    """)
-
-    @MockRustcVersion("1.60.0")
-    fun `test remove feature attribute quick-fix`() = checkFixByText("Remove attribute `feature`", """
-        #![<error>/*caret*/feature</error>(never_type)]
-
-        fn main() {}
-    """, """
-        fn main() {}
-    """)
-
-    @MockAdditionalCfgOptions("intellij_rust")
-    @MockRustcVersion("1.60.0")
-    fun `test no remove feature attribute quick-fix inside cfg_attr`() = checkFixIsUnavailable("Remove attribute `feature`", """
-        #![cfg_attr(intellij_rust, <error>/*caret*/feature</error>(never_type))]
-
-        fn main() {}
     """)
 
     fun `test recursive async function E0733`() = checkErrors("""
@@ -4677,5 +4592,37 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase(RsErrorAnnotator::class) {
         }
 
         fn foo<T, E>(f: T) where T: FnOnce() -> E {}
+    """)
+
+    @MockRustcVersion("1.68.0")
+    fun `test replace exclusive range pattern with inclusive`() = checkFixByTextWithoutHighlighting("Replace with `1..=2`", """
+        fn foo(x: i32) {
+            match x {
+                /*caret*/1..2 => println!("a")
+            }
+        }
+    """, """
+        fn foo(x: i32) {
+            match x {
+                /*caret*/1..=2 => println!("a")
+            }
+        }
+    """)
+
+    @MockRustcVersion("1.71.0")
+    fun `test c str literal E0658 1`() = checkErrors("""
+        fn main() {
+            <error descr="`c\"..\"` literals is experimental [E0658]">c"foo"</error>;
+            <error descr="`c\"..\"` literals is experimental [E0658]">cr#"foo"#</error>;
+        }
+    """)
+
+    @MockRustcVersion("1.71.0-nightly")
+    fun `test c str literal E0658 2`() = checkErrors("""
+        #![feature(c_str_literals)]
+        fn main() {
+            c"foo";
+            cr#"foo"#;
+        }
     """)
 }

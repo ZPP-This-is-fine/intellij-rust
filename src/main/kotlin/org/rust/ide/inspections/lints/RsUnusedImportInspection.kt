@@ -11,10 +11,12 @@ import com.intellij.codeInspection.ui.MultipleCheckboxOptionsPanel
 import com.intellij.openapi.project.Project
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.psi.PsiElement
+import com.intellij.psi.impl.source.tree.LeafPsiElement
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.PsiSearchHelper
 import com.intellij.psi.search.SearchScope
 import com.intellij.psi.search.UsageSearchContext
+import org.rust.RsBundle
 import org.rust.ide.fixes.RemoveImportFix
 import org.rust.ide.injected.isDoctestInjection
 import org.rust.ide.inspections.RsProblemsHolder
@@ -47,7 +49,7 @@ class RsUnusedImportInspection : RsLintInspection() {
             if (ignoreDoctest && item.containingCrate is DoctestCrate) return
             if (enableOnlyIfProcMacrosEnabled && !ProcMacroApplicationService.isFullyEnabled() && !isUnitTestMode) return
 
-            val owner = item.parent as? RsItemsOwner ?: return
+            val owner = item.context as? RsItemsOwner ?: return
             val usage = owner.pathUsage
 
             val speck = item.useSpeck ?: return
@@ -102,15 +104,15 @@ class RsUnusedImportInspection : RsLintInspection() {
         val fixes = if (useSpeck.isDoctestInjection) emptyList() else listOf((RemoveImportFix(element)))
         holder.registerLintProblem(
             element,
-            "Unused import: `${useSpeck.text}`",
+            RsBundle.message("inspection.message.unused.import", useSpeck.text),
             RsLintHighlightingType.UNUSED_SYMBOL,
             fixes
         )
     }
 
     override fun createOptionsPanel(): JComponent = MultipleCheckboxOptionsPanel(this).apply {
-        addCheckbox("Ignore unused imports in doctests", "ignoreDoctest")
-        addCheckbox("Enable inspection only if procedural macros are enabled", "enableOnlyIfProcMacrosEnabled")
+        addCheckbox(RsBundle.message("checkbox.ignore.unused.imports.in.doctests"), "ignoreDoctest")
+        addCheckbox(RsBundle.message("checkbox.enable.inspection.only.if.procedural.macros.are.enabled"), "enableOnlyIfProcMacrosEnabled")
     }
 
     companion object {
@@ -262,12 +264,15 @@ fun RsElement.processReferencesWithAliases(
 ): Boolean {
     // returning `false` stops the processing
     fun processor(element: PsiElement): Boolean {
-        if (element !is RsReferenceElementBase || element.referenceName != identifier) return true
-        element.findExpansionElements()?.let { expansionElements ->
-            return expansionElements
-                .mapNotNull { it.ancestorStrict<RsElement>() }  // PsiElement(identifier)
-                .all(::processor)
+        if (element is LeafPsiElement) {
+            element.findExpansionElements()?.let { expansionElements ->
+                return expansionElements
+                    .asSequence()
+                    .flatMap { it.ancestors }
+                    .all(::processor)
+            }
         }
+        if (element !is RsReferenceElementBase || element.referenceName != identifier) return true
         return if (element is RsReferenceElement && element.reference?.isReferenceTo(this) == true) {
             originalProcessor(element)
         } else {

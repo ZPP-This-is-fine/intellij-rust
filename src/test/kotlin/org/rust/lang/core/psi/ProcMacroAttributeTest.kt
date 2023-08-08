@@ -16,6 +16,7 @@ import org.rust.ide.experiments.RsExperiments.PROC_MACROS
 import org.rust.lang.core.psi.ProcMacroAttributeTest.TestProcMacroAttribute.*
 import org.rust.lang.core.psi.ext.*
 import org.rust.lang.core.stubs.RsAttrProcMacroOwnerStub
+import org.rust.lang.core.stubs.RsFileStub
 import org.rust.stdext.singleOrFilter
 
 /**
@@ -396,15 +397,13 @@ class ProcMacroAttributeTest : RsTestBase() {
     """, Attr("attr_hardcoded_not_a_macro", 0))
 
     @WithExperimentalFeatures(EVALUATE_BUILD_SCRIPTS)
-    fun `test not a macro if proc macro expansion is disabled`() {
-        setExperimentalFeatureEnabled(PROC_MACROS, false, testRootDisposable)
-        doTest("""
-            use test_proc_macros::attr_as_is;
+    @WithoutExperimentalFeatures(PROC_MACROS, ATTR_PROC_MACROS)
+    fun `test not a macro if proc macro expansion is disabled`() = doTest("""
+        use test_proc_macros::attr_as_is;
 
-            #[attr_as_is]
-            mod foo {}
-        """, None)
-    }
+        #[attr_as_is]
+        mod foo {}
+    """, None)
 
     @WithExperimentalFeatures(EVALUATE_BUILD_SCRIPTS)
     fun `test not a macro if attr macro expansion is disabled 1`() {
@@ -442,7 +441,7 @@ class ProcMacroAttributeTest : RsTestBase() {
 
         @Suppress("UNCHECKED_CAST")
         val itemElementType = item.elementType as IStubElementType<*, PsiElement>
-        val stub = itemElementType.createStub(item, null)
+        val stub = itemElementType.createStub(item, RsFileStub(null, flags = 0))
         if (stub is RsAttrProcMacroOwnerStub && actualAttr is Attr) {
             assertEquals(item.stubbedText, stub.stubbedText)
             assertEquals(item.startOffset, stub.startOffset)

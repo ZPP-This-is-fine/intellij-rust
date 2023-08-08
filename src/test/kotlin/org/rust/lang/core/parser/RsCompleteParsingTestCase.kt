@@ -82,6 +82,16 @@ class RsCompleteParsingTestCase : RsParsingTestCaseBase("complete") {
 
     fun `test reserved keywords`() = doTest(true)
 
+    fun `test break with label in condition`() = doTest(true)
+
+    fun `test default parameter values`() = doTest(true)
+
+    fun `test impl dyn type bound`() = doTest(true)
+
+    fun `test struct inheritance`() = doTest(true)
+
+    fun `test inc dec`() = doTest(true)
+
     override fun checkResult(targetDataName: String, file: PsiFile) {
         super.checkResult(targetDataName, file)
         check(!hasError(file)) {

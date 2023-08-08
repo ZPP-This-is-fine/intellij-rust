@@ -6,6 +6,7 @@
 package org.rust.ide.inspections.lints
 
 import com.intellij.psi.PsiElement
+import org.rust.RsBundle
 import org.rust.ide.inspections.RsProblemsHolder
 import org.rust.ide.inspections.RsWithMacrosInspectionVisitor
 import org.rust.lang.core.psi.RsFunction
@@ -49,7 +50,7 @@ class RsSelfConventionInspection : RsLintInspection() {
                 if (selfSignature == SelfSignature.BY_VAL) {
                     val selfType = traitOrImpl.selfType
                     val implLookup = ImplLookup.relativeTo(traitOrImpl)
-                    if (selfType is TyUnknown || implLookup.isCopy(selfType)) return
+                    if (selfType is TyUnknown || !implLookup.isCopy(selfType).isFalse) return
                 }
 
                 holder.registerProblem(m.selfParameter ?: m.identifier, convention)
@@ -125,8 +126,7 @@ data class SelfConvention(
 private fun RsProblemsHolder.registerProblem(element: PsiElement, convention: SelfConvention) {
     val selfTypes = convention.selfSignatures.joinToString(" or ") { it.description }
 
-    val description = "methods called `${convention.prefix}*${convention.postfix ?: ""}` usually take $selfTypes; " +
-        "consider choosing a less ambiguous name"
+    val description = RsBundle.message("inspection.message.methods.called.usually.take.consider.choosing.less.ambiguous.name", convention.prefix, convention.postfix ?: "", selfTypes)
 
     registerProblem(element, description)
 }

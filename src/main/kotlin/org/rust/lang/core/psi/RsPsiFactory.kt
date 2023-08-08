@@ -72,6 +72,10 @@ class RsPsiFactory(
             ?: error("Failed to create macro call")
     }
 
+    fun createFormatMacroArg(argument: String): RsFormatMacroArg =
+        createFromText("print!($argument)")
+            ?: error("Failed to create format macro argument")
+
     fun createSelf(mutable: Boolean = false): RsSelfParameter {
         return createFromText<RsFunction>("fn main(${if (mutable) "mut " else ""}self){}")?.selfParameter
             ?: error("Failed to create self element")
@@ -79,6 +83,11 @@ class RsPsiFactory(
 
     fun createSelfReference(mutable: Boolean = false): RsSelfParameter {
         return createFromText<RsFunction>("fn main(&${if (mutable) "mut " else ""}self){}")?.selfParameter
+            ?: error("Failed to create self element")
+    }
+
+    fun createSelfWithType(text: String): RsSelfParameter {
+        return createFromText<RsFunction>("fn main(self: $text){}")?.selfParameter
             ?: error("Failed to create self element")
     }
 
@@ -370,6 +379,10 @@ class RsPsiFactory(
         createFromText("#![$text]")
             ?: error("Failed to create an inner attribute from text: `$text`")
 
+    fun createMetaItem(text: String): RsMetaItem =
+        createFromText("#[$text] fn f(){}")
+            ?: error("Failed to create a meta item from text: `$text`")
+
     fun createMatchBody(patterns: List<Pattern>, ctx: RsElement? = null): RsMatchBody {
         val arms = patterns.joinToString("\n") { "${it.text(ctx)} => {}" }
         return createExpressionOfType<RsMatchExpr>("match x { $arms }").matchBody
@@ -406,6 +419,9 @@ class RsPsiFactory(
     fun createColon(): PsiElement =
         createFromText<RsConstant>("const C: () = ();")!!.colon!!
 
+    fun createDotDotEq(): PsiElement =
+        createFromText<RsRangeExpr>("fn main() { for i in 1..=2 {}}")!!.dotdoteq!!
+
     fun createColonColon(): PsiElement =
         tryCreatePath("::x")!!.coloncolon!!
 
@@ -439,6 +455,17 @@ class RsPsiFactory(
 
     fun createLambda(text: String): RsLambdaExpr =
         tryCreateLambda(text) ?: error("Failed to create lambda element: $text")
+
+    fun createLabelDeclaration(name: String): RsLabelDecl = createFromText("fn main() { '$name: while true {} }")!!
+
+    fun createLabel(name: String): RsLabel = createFromText("fn main() { break '$name; }")!!
+
+    fun createLoop(blockText: String, labelName: String? = null): RsLoopExpr {
+        val labelText = if (labelName != null) "$labelName:" else ""
+        return createFromText("fn main() { $labelText loop $blockText }")!!
+    }
+
+    fun createBox(exprText: String): RsCallExpr = createFromText("fn main() { Box::new($exprText); }")!!
 
     private fun tryCreateLambda(text: String): RsLambdaExpr? = createFromText("fn main() { let _ = $text }")
 

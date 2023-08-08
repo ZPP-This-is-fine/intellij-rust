@@ -6,11 +6,9 @@
 package org.rust.ide.fixes
 
 import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview
-import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
+import org.rust.RsBundle
 import org.rust.ide.utils.template.buildAndRunTemplate
 import org.rust.lang.core.psi.RsPathType
 import org.rust.lang.core.psi.RsPsiFactory
@@ -19,21 +17,14 @@ import org.rust.lang.core.psi.ext.RsElement
 import org.rust.lang.core.psi.ext.startOffset
 
 class AddAssocTypeBindingsFix(
-    element: PsiElement,
+    element: RsElement,
     @SafeFieldForPreview
     private val missingTypes: List<String>
-) : LocalQuickFixAndIntentionActionOnPsiElement(element) {
-    override fun getText(): String = "Add missing associated types"
+) : RsQuickFixBase<RsElement>(element) {
+    override fun getText(): String = RsBundle.message("intention.name.add.missing.associated.types")
     override fun getFamilyName() = text
 
-    override fun invoke(
-        project: Project,
-        file: PsiFile,
-        editor: Editor?,
-        startElement: PsiElement,
-        endElement: PsiElement
-    ) {
-        val element = startElement as? RsElement ?: return
+    override fun invoke(project: Project, editor: Editor?, element: RsElement) {
         val path = when (element) {
             is RsTraitRef -> element.path
             is RsPathType -> element.path

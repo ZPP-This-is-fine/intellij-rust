@@ -7,6 +7,7 @@ package org.rust.ide.inspections.lints
 
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
+import org.rust.RsBundle
 import org.rust.ide.fixes.ElideLifetimesFix
 import org.rust.ide.inspections.RsProblemsHolder
 import org.rust.ide.inspections.RsWithMacrosInspectionVisitor
@@ -40,13 +41,13 @@ class RsNeedlessLifetimesInspection : RsLintInspection() {
     private fun registerProblem(holder: RsProblemsHolder, fn: RsFunction) {
         holder.registerLintProblem(
             fn,
-            "Explicit lifetimes given in parameter types where they could be elided",
+            RsBundle.message("inspection.message.explicit.lifetimes.given.in.parameter.types.where.they.could.be.elided"),
             TextRange(
                 fn.fn.startOffsetInParent,
                 fn.block?.getPrevNonCommentSibling()?.endOffsetInParent ?: fn.identifier.endOffsetInParent
             ),
             RsLintHighlightingType.WEAK_WARNING,
-            listOf(ElideLifetimesFix())
+            listOf(ElideLifetimesFix(fn))
         )
     }
 }
@@ -56,6 +57,7 @@ class RsNeedlessLifetimesInspection : RsLintInspection() {
  * - no output references, all input references have different LT
  * - output references, exactly one input reference with same LT
  * All lifetimes must be unnamed, 'static or defined without bounds on the level of the current item.
+ * Note: async fn syntax does not allow lifetime elision outside of & and &mut references.
  */
 private fun couldUseElision(fn: RsFunction): Boolean {
     if (hasWhereLifetimes(fn.whereClause)) return false
@@ -63,8 +65,11 @@ private fun couldUseElision(fn: RsFunction): Boolean {
     val typeParametersBounds = fn.typeParameters.flatMap { it.bounds }.map { it.bound }
     if (typeParametersBounds.any { hasNamedReferenceLifetime(it) }) return false
 
-    val (inputLifetimes, outputLifetimes) = collectLifetimesFromFnSignature(fn)
-        ?: return false
+    val (inputLifetimeCollector, outputLifetimesCollector) = collectLifetimesFromFnSignature(fn) ?: return false
+    val inputLifetimes = inputLifetimeCollector.lifetimes
+    val outputLifetimes = outputLifetimesCollector.lifetimes
+
+    if (fn.isAsync && (inputLifetimeCollector.hasLifetimeOutsideRef || outputLifetimesCollector.hasLifetimeOutsideRef)) return false
 
     // no input lifetimes? easy case!
     if (inputLifetimes.isEmpty()) return false
@@ -103,6 +108,7 @@ private fun couldUseElision(fn: RsFunction): Boolean {
 
 private class LifetimesCollector(val isForInputParams: Boolean = false) : RsRecursiveVisitor() {
     var abort: Boolean = false
+    var hasLifetimeOutsideRef: Boolean = false
     val lifetimes = mutableListOf<ReferenceLifetime>()
 
     override fun visitSelfParameter(selfParameter: RsSelfParameter) {
@@ -143,7 +149,10 @@ private class LifetimesCollector(val isForInputParams: Boolean = false) : RsRecu
         super.visitPath(path)
     }
 
-    override fun visitLifetime(lifetime: RsLifetime) = record(lifetime)
+    override fun visitLifetime(lifetime: RsLifetime) {
+        hasLifetimeOutsideRef = hasLifetimeOutsideRef || lifetime.parent !is RsRefLikeType
+        record(lifetime)
+    }
 
     override fun visitElement(element: RsElement) {
         if (abort) return
@@ -198,9 +207,9 @@ private class BodyLifetimeChecker : RsWithMacrosInspectionVisitor() {
     }
 }
 
-private fun collectLifetimesFromFnSignature(fn: RsFunction): Pair<List<ReferenceLifetime>, List<ReferenceLifetime>>? {
+private fun collectLifetimesFromFnSignature(fn: RsFunction): Pair<LifetimesCollector, LifetimesCollector>? {
     // these will collect all the lifetimes for references in arg/return types
-    val inputCollector = LifetimesCollector(true)
+    val inputCollector = LifetimesCollector(isForInputParams = true)
     val outputCollector = LifetimesCollector()
 
     // extract lifetimes in input argument types
@@ -214,7 +223,7 @@ private fun collectLifetimesFromFnSignature(fn: RsFunction): Pair<List<Reference
     fn.retType?.typeReference?.accept(outputCollector)
     if (outputCollector.abort) return null
 
-    return Pair(inputCollector.lifetimes, outputCollector.lifetimes)
+    return inputCollector to outputCollector
 }
 
 private fun allowedLifetimesFrom(lifetimeParameters: List<RsLifetimeParameter>): Set<ReferenceLifetime> {
@@ -301,5 +310,5 @@ fun RsFunction.hasMissingLifetimes(): Boolean {
     if (retType == null) return false
     if (selfParameter?.isRefLike == true) return false
     val (inputLifetimes, outputLifetimes) = collectLifetimesFromFnSignature(this) ?: return false
-    return outputLifetimes.any { it is Unnamed } && inputLifetimes.size != 1
+    return outputLifetimes.lifetimes.any { it is Unnamed } && inputLifetimes.lifetimes.size != 1
 }

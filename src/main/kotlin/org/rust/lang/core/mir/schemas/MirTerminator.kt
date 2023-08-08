@@ -5,8 +5,6 @@
 
 package org.rust.lang.core.mir.schemas
 
-import org.rust.lang.core.types.ty.Ty
-
 sealed interface MirTerminator<out BB : MirBasicBlock> {
     val source: MirSourceInfo
 
@@ -36,15 +34,59 @@ sealed interface MirTerminator<out BB : MirBasicBlock> {
 
     data class SwitchInt<BB : MirBasicBlock>(
         val discriminant: MirOperand,
-        val switchTy: Ty,
         val targets: MirSwitchTargets<BB>,
         override val source: MirSourceInfo,
     ) : MirTerminator<BB>
+
+    data class FalseEdge<BB : MirBasicBlock>(
+        val realTarget: BB,
+        val imaginaryTarget: BB?,
+        override val source: MirSourceInfo,
+    ) : MirTerminator<BB>
+
+    data class FalseUnwind<BB : MirBasicBlock>(
+        val realTarget: BB,
+        val unwind: BB?,
+        override val source: MirSourceInfo,
+    ) : MirTerminator<BB>
+
+    data class Unreachable(
+        override val source: MirSourceInfo,
+    ) : MirTerminator<Nothing>
+
+    data class Call<BB : MirBasicBlock>(
+        val callee: MirOperand,
+        val args: List<MirOperand>,
+        val destination: MirPlace,
+        val target: BB?,
+        val unwind: BB?,
+        val fromCall: Boolean,
+        override val source: MirSourceInfo,
+    ) : MirTerminator<BB>
+
+    data class Drop<BB : MirBasicBlock>(
+        val place: MirPlace,
+        val target: BB,
+        val unwind: BB?,
+        override val source: MirSourceInfo,
+    ) : MirTerminator<BB>
+
+    val successors: List<MirBasicBlock>
+        get() = when (this) {
+            is Return, is Resume, is Unreachable -> emptyList()
+            is Assert -> listOfNotNull(target, unwind)
+            is Goto -> listOf(target)
+            is SwitchInt -> targets.targets
+            is FalseUnwind -> listOfNotNull(realTarget, unwind)
+            is Call -> listOfNotNull(target, unwind)
+            is Drop -> listOfNotNull(target, unwind)
+            is FalseEdge -> listOfNotNull(realTarget, imaginaryTarget)
+        }
 
     companion object {
         /**
          * This is singleton because it is identified using reference identity (===)
          */
-        val dummy = Resume(MirSourceInfo.Fake)
+        val dummy = Resume(MirSourceInfo.fake)
     }
 }

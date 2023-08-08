@@ -5,22 +5,20 @@
 
 package org.rust.ide.fixes
 
-import com.intellij.codeInspection.LocalQuickFixOnPsiElement
+import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
+import org.rust.RsBundle
 import org.rust.lang.core.psi.RsPolybound
 import org.rust.lang.core.psi.ext.deleteWithSurroundingPlus
 
 class RemovePolyBoundFix(
     bound: RsPolybound,
     private val boundName: String = "`${bound.text}`"
-) : LocalQuickFixOnPsiElement(bound) {
-    override fun getText() = "Remove $boundName bound"
-    override fun getFamilyName() = "Remove bound"
+) : RsQuickFixBase<RsPolybound>(bound) {
+    override fun getText() = RsBundle.message("intention.name.remove.bound", boundName)
+    override fun getFamilyName() = RsBundle.message("intention.family.name.remove.bound")
 
-    override fun invoke(project: Project, file: PsiFile, startElement: PsiElement, endElement: PsiElement) {
-        val bound = (startElement as? RsPolybound) ?: return
+    override fun invoke(project: Project, editor: Editor?, bound: RsPolybound) {
         bound.deleteWithSurroundingPlus()
     }
 }

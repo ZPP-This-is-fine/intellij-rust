@@ -5,11 +5,10 @@
 
 package org.rust.ide.fixes
 
-import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement
+import com.intellij.codeInspection.util.IntentionName
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
+import org.rust.RsBundle
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
 import org.rust.lang.core.psi.ext.RsBindingModeKind.BindByReference
@@ -18,14 +17,15 @@ import org.rust.lang.core.types.declaration
 import org.rust.lang.core.types.ty.TyReference
 import org.rust.lang.core.types.type
 
-class AddMutableFix(binding: RsNamedElement) : LocalQuickFixAndIntentionActionOnPsiElement(binding) {
-    private val _text = "Make `${binding.name}` mutable"
-    override fun getFamilyName(): String = "Make mutable"
+class AddMutableFix(binding: RsNamedElement) : RsQuickFixBase<RsNamedElement>(binding) {
+    @IntentionName
+    private val _text = RsBundle.message("intention.name.make.mutable", binding.name?:"")
+    override fun getFamilyName(): String = RsBundle.message("intention.family.name.make.mutable")
     override fun getText(): String = _text
     val mutable = true
 
-    override fun invoke(project: Project, file: PsiFile, editor: Editor?, startElement: PsiElement, endElement: PsiElement) {
-        updateMutable(project, startElement as RsNamedElement, mutable)
+    override fun invoke(project: Project, editor: Editor?, element: RsNamedElement) {
+        updateMutable(project, element, mutable)
     }
 
     companion object {

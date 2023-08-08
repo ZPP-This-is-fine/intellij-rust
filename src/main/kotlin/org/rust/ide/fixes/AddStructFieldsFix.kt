@@ -5,11 +5,9 @@
 
 package org.rust.ide.fixes
 
-import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
+import org.rust.RsBundle
 import org.rust.ide.utils.addMissingFieldsToStructLiteral
 import org.rust.lang.core.psi.RsPsiFactory
 import org.rust.lang.core.psi.RsStructLiteral
@@ -20,24 +18,18 @@ import org.rust.lang.core.psi.RsStructLiteral
 class AddStructFieldsFix(
     structBody: RsStructLiteral,
     private val recursive: Boolean = false
-) : LocalQuickFixAndIntentionActionOnPsiElement(structBody) {
+) : RsQuickFixBase<RsStructLiteral>(structBody) {
     override fun getText(): String {
         return if (recursive) {
-            "Recursively add missing fields"
+            RsBundle.message("intention.name.recursively.add.missing.fields")
         } else {
-            "Add missing fields"
+            RsBundle.message("intention.name.add.missing.fields")
         }
     }
 
     override fun getFamilyName(): String = text
 
-    override fun invoke(
-        project: Project,
-        file: PsiFile,
-        editor: Editor?,
-        startElement: PsiElement,
-        endElement: PsiElement
-    ) {
-        addMissingFieldsToStructLiteral(RsPsiFactory(project), editor, startElement as RsStructLiteral, recursive)
+    override fun invoke(project: Project, editor: Editor?, element: RsStructLiteral) {
+        addMissingFieldsToStructLiteral(RsPsiFactory(project), editor, element, recursive)
     }
 }

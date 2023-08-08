@@ -6,11 +6,12 @@
 package org.rustSlowTests
 
 import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.xml.util.XmlStringUtil
 import org.intellij.lang.annotations.Language
 import org.rust.*
 import org.rust.cargo.RsWithToolchainTestBase
 import org.rust.cargo.project.model.cargoProjects
-import org.rust.cargo.project.settings.rustSettings
+import org.rust.cargo.project.settings.externalLinterSettings
 import org.rust.cargo.project.workspace.FeatureState
 import org.rust.cargo.project.workspace.PackageFeature
 import org.rust.cargo.project.workspace.PackageOrigin
@@ -21,7 +22,7 @@ class RsExternalLinterPassTest : RsWithToolchainTestBase() {
 
     override fun setUp() {
         super.setUp()
-        project.rustSettings.modifyTemporary(testRootDisposable) { it.runExternalLinterOnTheFly = true }
+        project.externalLinterSettings.modifyTemporary(testRootDisposable) { it.runOnTheFly = true }
     }
 
     fun `test no errors if everything is ok`() = doTest("""
@@ -214,7 +215,7 @@ class RsExternalLinterPassTest : RsWithToolchainTestBase() {
         @Language("Rust") mainRs: String,
         externalLinter: ExternalLinter = ExternalLinter.DEFAULT
     ) {
-        project.rustSettings.modifyTemporary(testRootDisposable) { it.externalLinter = externalLinter }
+        project.externalLinterSettings.modifyTemporary(testRootDisposable) { it.tool = externalLinter }
         fileTree {
             toml("Cargo.toml", """
                 [package]
@@ -245,7 +246,7 @@ class RsExternalLinterPassTest : RsWithToolchainTestBase() {
         tooltip: String,
         externalLinter: ExternalLinter = ExternalLinter.DEFAULT
     ) {
-        project.rustSettings.modifyTemporary(testRootDisposable) { it.externalLinter = externalLinter }
+        project.externalLinterSettings.modifyTemporary(testRootDisposable) { it.tool = externalLinter }
         fileTree {
             toml("Cargo.toml", """
                 [package]
@@ -261,6 +262,8 @@ class RsExternalLinterPassTest : RsWithToolchainTestBase() {
         myFixture.openFileInEditor(cargoProjectDirectory.findFileByRelativePath("src/main.rs")!!)
         val highlight = myFixture.doHighlighting(HighlightSeverity.WEAK_WARNING)
             .single { it.description == RsExternalLinterUtils.TEST_MESSAGE }
-        assertEquals(tooltip.trimIndent().replace("\n", "<br>"), highlight.toolTip)
+        // Since 2023.2 `highlight.toolTip` is always wrapped into `html` tag
+        val toolTip = highlight.toolTip?.let { XmlStringUtil.stripHtml(it) }
+        assertEquals(tooltip.trimIndent().replace("\n", "<br>"), toolTip)
     }
 }

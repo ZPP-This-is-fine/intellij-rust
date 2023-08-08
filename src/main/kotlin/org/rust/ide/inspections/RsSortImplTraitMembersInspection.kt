@@ -5,11 +5,12 @@
 
 package org.rust.ide.inspections
 
-import com.intellij.codeInspection.LocalQuickFix
-import com.intellij.codeInspection.ProblemDescriptor
+import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.tree.IElementType
+import org.rust.RsBundle
+import org.rust.ide.fixes.RsQuickFixBase
 import org.rust.lang.core.psi.RsImplItem
 import org.rust.lang.core.psi.RsVisitor
 import org.rust.lang.core.psi.ext.*
@@ -27,9 +28,10 @@ class RsSortImplTraitMembersInspection : RsLocalInspectionTool() {
                 typeRef.startOffsetInParent + typeRef.textLength
             )
             holder.registerProblem(
-                impl, textRange,
-                "Different impl member order from the trait",
-                SortImplTraitMembersFix()
+                impl,
+                textRange,
+                RsBundle.message("inspection.message.different.impl.member.order.from.trait"),
+                SortImplTraitMembersFix(impl)
             )
         }
     }
@@ -47,13 +49,13 @@ class RsSortImplTraitMembersInspection : RsLocalInspectionTool() {
         }
     }
 
-    private class SortImplTraitMembersFix : LocalQuickFix {
-        override fun getFamilyName() = "Apply same member order"
+    private class SortImplTraitMembersFix(element: RsImplItem) : RsQuickFixBase<RsImplItem>(element) {
+        override fun getText() = RsBundle.message("intention.name.apply.same.member.order")
+        override fun getFamilyName() = text
 
-        override fun applyFix(project: Project, descriptor: ProblemDescriptor) {
-            val impl = descriptor.psiElement as? RsImplItem ?: return
-            val trait = impl.traitRef?.resolveToTrait() ?: return
-            val implItems = impl.explicitMembers
+        override fun invoke(project: Project, editor: Editor?, element: RsImplItem) {
+            val trait = element.traitRef?.resolveToTrait() ?: return
+            val implItems = element.explicitMembers
             val traitItems = trait.explicitMembers
 
             // As we're applying the fix, this will be non-null.

@@ -10,6 +10,7 @@ import org.rust.cargo.project.workspace.CargoWorkspace.Edition
 import org.rust.ide.annotator.format.RsFormatMacroAnnotator
 import org.rust.ide.colors.RsColor
 
+@SkipTestWrapping // TODO investigate what doesn't work in macros
 @ProjectDescriptor(WithStdlibRustProjectDescriptor::class)
 class RsFormatMacroAnnotatorTest : RsAnnotatorTestBase(RsFormatMacroAnnotator::class) {
     override fun setUp() {
@@ -265,18 +266,18 @@ If you intended to print `{` symbol, you can escape it using `{{`">{</error>"###
 
         fn main() {
             let s = S;
-            println!("<FORMAT_PARAMETER>{}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Display` (required by {})">s</error>);
-            println!("<FORMAT_PARAMETER>{:<FUNCTION>?</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Debug` (required by {:?})">s</error>);
-            println!("<FORMAT_PARAMETER>{:<FUNCTION>x?</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Debug` (required by {:x?})">s</error>);
-            println!("<FORMAT_PARAMETER>{:<FUNCTION>X?</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Debug` (required by {:X?})">s</error>);
-            println!("<FORMAT_PARAMETER>{:#<FUNCTION>?</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Debug` (required by {:#?})">s</error>);
-            println!("<FORMAT_PARAMETER>{:<FUNCTION>o</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Octal` (required by {:o})">s</error>);
-            println!("<FORMAT_PARAMETER>{:<FUNCTION>x</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `LowerHex` (required by {:x})">s</error>);
-            println!("<FORMAT_PARAMETER>{:<FUNCTION>X</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `UpperHex` (required by {:X})">s</error>);
-            println!("<FORMAT_PARAMETER>{:<FUNCTION>p</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Pointer` (required by {:p})">s</error>);
-            println!("<FORMAT_PARAMETER>{:<FUNCTION>b</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Binary` (required by {:b})">s</error>);
-            println!("<FORMAT_PARAMETER>{:<FUNCTION>e</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `LowerExp` (required by {:e})">s</error>);
-            println!("<FORMAT_PARAMETER>{<FORMAT_SPECIFIER>0</FORMAT_SPECIFIER>:<FUNCTION>E</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `UpperExp` (required by {0:E})">s</error>);
+            println!("<FORMAT_PARAMETER>{}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Display` (required by {}) [E0277]">s</error>);
+            println!("<FORMAT_PARAMETER>{:<FUNCTION>?</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Debug` (required by {:?}) [E0277]">s</error>);
+            println!("<FORMAT_PARAMETER>{:<FUNCTION>x?</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Debug` (required by {:x?}) [E0277]">s</error>);
+            println!("<FORMAT_PARAMETER>{:<FUNCTION>X?</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Debug` (required by {:X?}) [E0277]">s</error>);
+            println!("<FORMAT_PARAMETER>{:#<FUNCTION>?</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Debug` (required by {:#?}) [E0277]">s</error>);
+            println!("<FORMAT_PARAMETER>{:<FUNCTION>o</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Octal` (required by {:o}) [E0277]">s</error>);
+            println!("<FORMAT_PARAMETER>{:<FUNCTION>x</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `LowerHex` (required by {:x}) [E0277]">s</error>);
+            println!("<FORMAT_PARAMETER>{:<FUNCTION>X</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `UpperHex` (required by {:X}) [E0277]">s</error>);
+            println!("<FORMAT_PARAMETER>{:<FUNCTION>p</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Pointer` (required by {:p}) [E0277]">s</error>);
+            println!("<FORMAT_PARAMETER>{:<FUNCTION>b</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `Binary` (required by {:b}) [E0277]">s</error>);
+            println!("<FORMAT_PARAMETER>{:<FUNCTION>e</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `LowerExp` (required by {:e}) [E0277]">s</error>);
+            println!("<FORMAT_PARAMETER>{<FORMAT_SPECIFIER>0</FORMAT_SPECIFIER>:<FUNCTION>E</FUNCTION>}</FORMAT_PARAMETER>", <error descr="`S` doesn't implement `UpperExp` (required by {0:E}) [E0277]">s</error>);
         }
     """)
 
@@ -451,11 +452,11 @@ If you intended to print `{` symbol, you can escape it using `{{`">{</error>"###
         }
     """)
 
-    fun `test ignore byte format string`() = checkErrors("""
+    fun `test byte format string`() = checkErrors("""
         fn main() {
-            println!(b"format", 1);
-            println!(br"format", 1);
-            println!(br##"format"##, 1);
+            println!(/*error descr="Format argument must be a string literal"*/b"format"/*error**/, 1);
+            println!(/*error descr="Format argument must be a string literal"*/br"format"/*error**/, 1);
+            println!(/*error descr="Format argument must be a string literal"*/br##"format"##/*error**/, 1);
         }
     """)
 
@@ -465,18 +466,18 @@ If you intended to print `{` symbol, you can escape it using `{{`">{</error>"###
 
         fn main() {
             let s = S;
-            println!("{}", <error descr="`S` doesn't implement `Display` (required by {})">s</error>);
-            println!("{:?}", <error descr="`S` doesn't implement `Debug` (required by {:?})">s</error>);
-            println!("{:x?}", <error descr="`S` doesn't implement `Debug` (required by {:x?})">s</error>);
-            println!("{:X?}", <error descr="`S` doesn't implement `Debug` (required by {:X?})">s</error>);
-            println!("{:#?}", <error descr="`S` doesn't implement `Debug` (required by {:#?})">s</error>);
-            println!("{:o}", <error descr="`S` doesn't implement `Octal` (required by {:o})">s</error>);
-            println!("{:x}", <error descr="`S` doesn't implement `LowerHex` (required by {:x})">s</error>);
-            println!("{:X}", <error descr="`S` doesn't implement `UpperHex` (required by {:X})">s</error>);
-            println!("{:p}", <error descr="`S` doesn't implement `Pointer` (required by {:p})">s</error>);
-            println!("{:b}", <error descr="`S` doesn't implement `Binary` (required by {:b})">s</error>);
-            println!("{:e}", <error descr="`S` doesn't implement `LowerExp` (required by {:e})">s</error>);
-            println!("{0:E}", <error descr="`S` doesn't implement `UpperExp` (required by {0:E})">s</error>);
+            println!("{}", <error descr="`S` doesn't implement `Display` (required by {}) [E0277]">s</error>);
+            println!("{:?}", <error descr="`S` doesn't implement `Debug` (required by {:?}) [E0277]">s</error>);
+            println!("{:x?}", <error descr="`S` doesn't implement `Debug` (required by {:x?}) [E0277]">s</error>);
+            println!("{:X?}", <error descr="`S` doesn't implement `Debug` (required by {:X?}) [E0277]">s</error>);
+            println!("{:#?}", <error descr="`S` doesn't implement `Debug` (required by {:#?}) [E0277]">s</error>);
+            println!("{:o}", <error descr="`S` doesn't implement `Octal` (required by {:o}) [E0277]">s</error>);
+            println!("{:x}", <error descr="`S` doesn't implement `LowerHex` (required by {:x}) [E0277]">s</error>);
+            println!("{:X}", <error descr="`S` doesn't implement `UpperHex` (required by {:X}) [E0277]">s</error>);
+            println!("{:p}", <error descr="`S` doesn't implement `Pointer` (required by {:p}) [E0277]">s</error>);
+            println!("{:b}", <error descr="`S` doesn't implement `Binary` (required by {:b}) [E0277]">s</error>);
+            println!("{:e}", <error descr="`S` doesn't implement `LowerExp` (required by {:e}) [E0277]">s</error>);
+            println!("{0:E}", <error descr="`S` doesn't implement `UpperExp` (required by {0:E}) [E0277]">s</error>);
         }
     """)
 
@@ -573,6 +574,300 @@ If you intended to print `{` symbol, you can escape it using `{{`">{</error>"###
         fn bar() {
             #[cfg(not(intellij_rust))]
             println!("{}");
+        }
+    """)
+
+    fun `test incorrect format string`() = checkErrors("""
+        fn main() {
+            println!(/*error descr="Format argument must be a string literal"*/1/*error**/);
+            println!(/*error descr="Format argument must be a string literal"*/x/*error**/);
+            println!(/*error descr="Format argument must be a string literal"*/foo=1/*error**/);
+            panic!(1);
+        }
+    """)
+
+    fun `test missing format string`() = checkErrors("""
+        fn main() {
+            println!();
+            /*error descr="Requires at least a format string argument"*/print!()/*error**/;
+            eprintln!();
+            /*error descr="Requires at least a format string argument"*/eprint!()/*error**/;
+            /*error descr="Requires at least a format string argument"*/format!()/*error**/;
+            /*error descr="Requires at least a format string argument"*/format_args!()/*error**/;
+            /*error descr="Requires at least a format string argument"*/format_args_nl!()/*error**/;
+            panic!();
+            /*error descr="Requires at least a format string argument"*/write!(x)/*error**/;
+            writeln!(x);
+        }
+    """)
+
+    fun `test add format string to print! macro without arguments`() = checkFixByTextWithoutHighlighting("Add format string", """
+        fn main() {
+            print!(/*caret*/);
+        }
+    """, """
+        fn main() {
+            print!("");
+        }
+    """)
+
+    fun `test add format string to print! macro with 1 argument`() = checkFixByTextWithoutHighlighting("Add format string", """
+        fn main() {
+            print!(/*caret*/1);
+        }
+    """, """
+        fn main() {
+            print!("{}", 1);
+        }
+    """)
+
+    fun `test add format string to print! macro with 2 arguments`() = checkFixByTextWithoutHighlighting("Add format string", """
+        fn main() {
+            print!(/*caret*/1, 2);
+        }
+    """, """
+        fn main() {
+            print!("{} {}", 1, 2);
+        }
+    """)
+
+    fun `test add format string to write! macro without arguments`() = checkFixByTextWithoutHighlighting("Add format string", """
+        fn main() {
+            write!(x/*caret*/);
+        }
+    """, """
+        fn main() {
+            write!(x, "");
+        }
+    """)
+
+    fun `test add format string to write! macro with 1 argument`() = checkFixByTextWithoutHighlighting("Add format string", """
+        fn main() {
+            write!(x, /*caret*/1);
+        }
+    """, """
+        fn main() {
+            write!(x, "{}", 1);
+        }
+    """)
+
+    fun `test derive debug fix`() = checkFixByTextWithoutHighlighting("Add #[derive(Debug)] to `Foo`", """
+        struct Foo {}
+        fn func(foo: Foo) {
+            println!("{:?}", /*caret*/foo);
+        }
+    """, """
+        #[derive(Debug)]
+        struct Foo {}
+        fn func(foo: Foo) {
+            println!("{:?}", foo);
+        }
+    """)
+
+    fun `test derive debug fix (reference)`() = checkFixByTextWithoutHighlighting("Add #[derive(Debug)] to `Foo`", """
+        struct Foo {}
+        fn func(foo: &Foo) {
+            println!("{:?}", /*caret*/foo);
+        }
+    """, """
+        #[derive(Debug)]
+        struct Foo {}
+        fn func(foo: &Foo) {
+            println!("{:?}", foo);
+        }
+    """)
+
+    fun `test derive debug fix (slice)`() = checkFixByTextWithoutHighlighting("Add #[derive(Debug)] to `Foo`", """
+        struct Foo {}
+        fn func(foos: &[Foo]) {
+            println!("{:?}", /*caret*/foos[0]);
+        }
+    """, """
+        #[derive(Debug)]
+        struct Foo {}
+        fn func(foos: &[Foo]) {
+            println!("{:?}", foos[0]);
+        }
+    """)
+
+    fun `test change Display to Debug 1`() = checkFixByTextWithoutHighlighting("Change format parameter to `{:?}`", """
+        #[derive(Debug)]
+        struct Foo {}
+        fn func(foo: Foo) {
+            println!("{}", /*caret*/foo);
+        }
+    """, """
+        #[derive(Debug)]
+        struct Foo {}
+        fn func(foo: Foo) {
+            println!("{:?}", foo);
+        }
+    """)
+
+    fun `test change Display to Debug 2`() = checkFixIsUnavailable("Change format parameter to `{:?}`", """
+        struct Foo {}
+        fn func(foo: Foo) {
+            println!("/*FORMAT_PARAMETER*/{}/*FORMAT_PARAMETER**/", /*error descr="`Foo` doesn't implement `Display` (required by {}) [E0277]"*/foo/*error**/);
+        }
+    """)
+
+    fun `test implement Display`() = checkFixByTextWithoutHighlighting("Implement `Display` trait for `S2`", """
+        struct S2 { a: i32, b: u8, }
+        fn main() {
+            let my_struct = S2 { a: 5, b: 5 };
+            println!("{}", my_struct/*caret*/);
+        }
+    """, """
+        use std::fmt::{Display, Formatter};
+
+        struct S2 { a: i32, b: u8, }
+
+        impl Display for S2 {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                <selection><caret>todo!()</selection>
+            }
+        }
+
+        fn main() {
+            let my_struct = S2 { a: 5, b: 5 };
+            println!("{}", my_struct);
+        }
+    """, preview = null)
+
+    fun `test implement Display with generics`() = checkFixByTextWithoutHighlighting("Implement `Display` trait for `S`", """
+        trait Iterator {}
+        trait Clone {}
+        struct S<Iter: Iterator, C> where C: Clone { iter: Iter, c: C }
+        fn foo<A: Iterator, B: Clone>(s: S<A, B>) {
+            println!("{}", s/*caret*/)
+        }
+    """, """
+        use std::fmt::{Display, Formatter};
+
+        trait Iterator {}
+        trait Clone {}
+        struct S<Iter: Iterator, C> where C: Clone { iter: Iter, c: C }
+
+        impl<Iter: Iterator, C> Display for S<Iter, C> where C: Clone {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                <selection><caret>todo!()</selection>
+            }
+        }
+
+        fn foo<A: Iterator, B: Clone>(s: S<A, B>) {
+            println!("{}", s)
+        }
+    """, preview = null)
+
+    fun `test implement Display with Display structs in scope`() = checkFixByTextWithoutHighlighting(
+        "Implement `Display` trait for `S2`", """
+        struct Display;
+        struct S2 { a: i32, b: u8, }
+        fn main() {
+            let my_struct = S2 { a: 5, b: 5 };
+            println!("{}", my_struct/*caret*/);
+        }
+    """, """
+        use std::fmt::Formatter;
+
+        struct Display;
+        struct S2 { a: i32, b: u8, }
+
+        impl std::fmt::Display for S2 {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                <selection><caret>todo!()</selection>
+            }
+        }
+
+        fn main() {
+            let my_struct = S2 { a: 5, b: 5 };
+            println!("{}", my_struct);
+        }
+    """, preview = null)
+
+    fun `test implement Display with Display & Formatter structs in scope`() = checkFixByTextWithoutHighlighting(
+        "Implement `Display` trait for `S2`", """
+        trait Display {}
+        struct Formatter<'a>;
+        struct S2 { a: i32, b: u8, }
+        fn main() {
+            let my_struct = S2 { a: 5, b: 5 };
+            println!("{}", my_struct/*caret*/);
+        }
+    """, """
+        trait Display {}
+        struct Formatter<'a>;
+        struct S2 { a: i32, b: u8, }
+
+        impl std::fmt::Display for S2 {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                <selection><caret>todo!()</selection>
+            }
+        }
+
+        fn main() {
+            let my_struct = S2 { a: 5, b: 5 };
+            println!("{}", my_struct);
+        }
+    """, preview = null)
+
+    fun `test implement Display with Display imported`() = checkFixByTextWithoutHighlighting(
+        "Implement `Display` trait for `S2`", """
+        use std::fmt::Display;
+        struct S2 { a: i32, b: u8, }
+        fn main() {
+            let my_struct = S2 { a: 5, b: 5 };
+            println!("{}", my_struct/*caret*/);
+        }
+    """, """
+        use std::fmt::{Display, Formatter};
+        struct S2 { a: i32, b: u8, }
+
+        impl Display for S2 {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                <selection><caret>todo!()</selection>
+            }
+        }
+
+        fn main() {
+            let my_struct = S2 { a: 5, b: 5 };
+            println!("{}", my_struct);
+        }
+    """, preview = null)
+
+    fun `test derive Debug and format display to debug`() = checkFixByTextWithoutHighlighting(
+        "Derive `Debug` for `S2` and replace `{}` with `{:?}`", """
+        struct S2 { a: i32, b: u8, }
+        fn main() {
+            let my_struct = S2 { a: 5, b: 5 };
+            println!("{}", my_struct/*caret*/);
+        }
+    """, """
+        #[derive(Debug)]
+        struct S2 { a: i32, b: u8, }
+        fn main() {
+            let my_struct = S2 { a: 5, b: 5 };
+            println!("{:?}", my_struct/*caret*/);
+        }
+    """)
+
+    @ProjectDescriptor(WithStdlibRustProjectDescriptor::class)
+    fun `test no derive Debug for external dependency`() = checkFixIsUnavailable("Derive `Debug` for `Vec` and replace `{}` with `{:?}`", """
+        struct S2 { a: i32, b: u8, }
+
+        fn main() {
+            let v = vec![S2 { a: 0, b: 0 }];
+            println!("<FORMAT_PARAMETER>{}</FORMAT_PARAMETER>", /*error descr="`Vec<S2>` doesn't implement `Display` (required by {}) [E0277]"*/v/*error**//*caret*/);
+        }
+    """)
+
+    @ProjectDescriptor(WithStdlibRustProjectDescriptor::class)
+    fun `test no implement Display for external dependency`() = checkFixIsUnavailable("Implement `Display` trait for `Vec`", """
+        struct S2 { a: i32, b: u8, }
+
+        fn main() {
+            let v = vec![S2 { a: 0, b: 0 }];
+            println!("<FORMAT_PARAMETER>{}</FORMAT_PARAMETER>", /*error descr="`Vec<S2>` doesn't implement `Display` (required by {}) [E0277]"*/v/*error**//*caret*/);
         }
     """)
 }

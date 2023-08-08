@@ -21,7 +21,6 @@ import com.intellij.psi.stubs.StubElement
 import com.intellij.psi.util.CachedValue
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
-import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ThreeState
 import org.rust.cargo.project.workspace.CargoWorkspace
 import org.rust.cargo.project.workspace.PackageOrigin
@@ -113,9 +112,11 @@ fun processFieldExprResolveVariants(
     for (ty in autoderef) {
         if (ty !is TyAdt || ty.item !is RsStructItem) continue
         val processor = originalProcessor.wrapWithMapper { it: ScopeEntry ->
-            FieldResolveVariant(it.name, it.element, ty, autoderef.steps())
+            FieldResolveVariant(it.name, it.element, ty, autoderef.steps(), autoderef.obligations())
         }
-        if (processFieldDeclarations(ty.item, processor)) return true
+        if (processFieldDeclarations(ty.item, processor)) {
+            return true
+        }
     }
 
     return false
@@ -326,8 +327,14 @@ fun findDependencyCrateByName(context: RsElement, name: String): RsFile? {
     } as? RsFile
 }
 
-fun processPathResolveVariants(lookup: ImplLookup?, path: RsPath, isCompletion: Boolean, processor: RsResolveProcessor): Boolean {
-    val ctx = PathResolutionContext(path, isCompletion, lookup)
+fun processPathResolveVariants(
+    lookup: ImplLookup?,
+    path: RsPath,
+    isCompletion: Boolean,
+    processAssocItems: Boolean,
+    processor: RsResolveProcessor,
+): Boolean {
+    val ctx = PathResolutionContext(path, isCompletion, processAssocItems, lookup)
     val pathKind = ctx.classifyPath(path)
     return processPathResolveVariants(ctx, pathKind, processor)
 }
@@ -368,7 +375,7 @@ fun processPathResolveVariants(ctx: PathResolutionContext, pathKind: RsPathResol
             }
             val crateRoot = ctx.crateRoot
             if (crateRoot != null) {
-                processItemOrEnumVariantDeclarations(crateRoot, pathKind.ns, processor, withPrivateImports = { true })
+                processItemDeclarationsInMod(crateRoot, pathKind.ns, processor, withPrivateImports = true)
             } else {
                 false
             }
@@ -508,19 +515,26 @@ private fun processQualifiedPathResolveVariants1(
     // Procedural macros definitions are functions, so they get added twice (once as macros, and once as items). To
     // avoid this, we exclude `MACROS` from passed namespaces
     val result1 = processWithShadowingAndUpdateScope(prevScope, ns - MACROS, processor) {
-        processItemOrEnumVariantDeclarations(
-            base,
-            ns - MACROS,
-            it,
-            withPrivateImports = { withPrivateImports(qualifier, base) }
-        )
+        if (parent is RsUseSpeck && base is RsEnumItem) {
+            if (processEnumVariants(it, base)) return true
+        }
+        if (base is RsMod) {
+            processItemDeclarationsInMod(
+                base,
+                ns - MACROS,
+                it,
+                withPrivateImports = withPrivateImports(qualifier, base)
+            )
+        } else {
+            false
+        }
     }
     if (result1) return true
 
     if (base is RsTraitItem && parent !is RsUseSpeck && !qualifier.hasCself) {
         if (processTraitRelativePath(BoundElement(base, subst), ns, processor)) return true
     } else if (base is RsTypeDeclarationElement && parent !is RsUseSpeck) { // Foo::<Bar>::baz
-        val baseTy = if (qualifier.hasCself) {
+        val (baseTy, _) = ctx.implLookup.ctx.normalizeAssociatedTypesIn(if (qualifier.hasCself) {
             when (base) {
                 // impl S { fn foo() { Self::bar() } }
                 is RsImplItem -> base.typeReference?.rawType ?: TyUnknown
@@ -539,7 +553,7 @@ private fun processQualifiedPathResolveVariants1(
                 subst
             }
             base.declaredType.substitute(realSubst)
-        }
+        })
 
         // Self-qualified type paths `Self::Item` inside impl items are restricted to resolve
         // to only members of the current impl or implemented trait or its parent traits
@@ -549,6 +563,10 @@ private fun processQualifiedPathResolveVariants1(
         } else {
             null
         }
+
+        if (processEnumVariantsWithShadowing(baseTy, prevScope, ns, processor)) return true
+
+        if (!ctx.processAssocItems) return false
 
         val result2 = processWithShadowing(prevScope, ns, processor) {
             if (restrictedTraits != null) {
@@ -562,6 +580,29 @@ private fun processQualifiedPathResolveVariants1(
     return false
 }
 
+private fun processEnumVariantsWithShadowing(
+    baseTy: Ty,
+    prevScope: HashMap<String, Set<Namespace>>,
+    ns: Set<Namespace>,
+    processor: RsResolveProcessor
+): Boolean {
+    return if (baseTy is TyAdt && baseTy.item is RsEnumItem) {
+        processWithShadowingAndUpdateScope(prevScope, ns, processor) {
+            processEnumVariants(it, baseTy.item, baseTy.typeParameterValues)
+        }
+    } else {
+        false
+    }
+}
+
+private fun processEnumVariants(
+    processor: RsResolveProcessor,
+    item: RsEnumItem,
+    subst: Substitution = emptySubstitution
+): Boolean {
+    return processAllWithSubst(item.variants, subst, ENUM_VARIANT_NS, processor)
+}
+
 /** `<T as Trait>::Item` or `<T>::Item` */
 private fun processExplicitTypeQualifiedPathResolveVariants(
     ctx: PathResolutionContext,
@@ -573,11 +614,16 @@ private fun processExplicitTypeQualifiedPathResolveVariants(
         // TODO this is a hack to fix completion test `test associated type in explicit UFCS form`.
         // Looks like we should use getOriginalOrSelf during resolve
         ?.let { BoundElement(CompletionUtil.getOriginalOrSelf(it.element), it.subst) }
-    val baseTy = typeQual.typeReference.rawType
+    val rawBaseTy = typeQual.typeReference.rawType
     return if (trait != null) {
-        processTypeAsTraitUFCSQualifiedPathResolveVariants(ns, baseTy, listOf(trait), processor)
+        processTypeAsTraitUFCSQualifiedPathResolveVariants(ns, rawBaseTy, listOf(trait), processor)
     } else {
-        processTypeQualifiedPathResolveVariants(ctx, processor, ns, baseTy)
+        val (baseTy, _) = ctx.implLookup.ctx.normalizeAssociatedTypesIn(rawBaseTy, 0)
+        val prevScope = hashMapOf<String, Set<Namespace>>()
+        if (processEnumVariantsWithShadowing(baseTy, prevScope, ns, processor)) return true
+        processWithShadowing(prevScope, ns, processor) {
+            processTypeQualifiedPathResolveVariants(ctx, it, ns, baseTy)
+        }
     }
 }
 
@@ -614,7 +660,6 @@ private fun processTypeQualifiedPathResolveVariants(
     baseTy: Ty,
 ): Boolean {
     val lookup = ctx.implLookup
-    val (normBaseTy, _) = lookup.ctx.normalizeAssociatedTypesIn(baseTy, 0)
     val shadowingProcessor = processor.wrapWithFilter<AssocItemScopeEntry> { e ->
         if (e.element is RsTypeAlias && baseTy is TyTypeParameter && e.source is TraitImplSource.ExplicitImpl) {
             NameResolutionTestmarks.SkipAssocTypeFromImpl.hit()
@@ -623,12 +668,12 @@ private fun processTypeQualifiedPathResolveVariants(
             true
         }
     }
-    val selfSubst = if (normBaseTy !is TyTraitObject) {
-        mapOf(TyTypeParameter.self() to normBaseTy).toTypeSubst()
+    val selfSubst = if (baseTy !is TyTraitObject) {
+        mapOf(TyTypeParameter.self() to baseTy).toTypeSubst()
     } else {
         emptySubstitution
     }
-    if (processAssociatedItemsWithSelfSubst(lookup, ctx.context, normBaseTy, ns, selfSubst, shadowingProcessor)) return true
+    if (processAssociatedItemsWithSelfSubst(lookup, ctx.context, baseTy, ns, selfSubst, shadowingProcessor)) return true
     return false
 }
 
@@ -709,10 +754,10 @@ fun processPatBindingResolveVariants(
     return processNestedScopesUpwards(binding, if (isCompletion) TYPES_N_VALUES else VALUES, processor)
 }
 
-fun processLabelResolveVariants(label: RsLabel, processor: RsResolveProcessor): Boolean {
+fun processLabelResolveVariants(label: RsLabel, processor: RsResolveProcessor, processBeyondLabelBarriers: Boolean = false): Boolean {
     val prevScope = hashMapOf<String, Set<Namespace>>()
     for (scope in label.contexts) {
-        if (scope is RsLambdaExpr || scope is RsFunction) return false
+        if (!processBeyondLabelBarriers && isLabelBarrier(scope)) return false
         if (scope is RsLabeledExpression) {
             val labelDecl = scope.labelDecl ?: continue
             val stop = processWithShadowingAndUpdateScope(prevScope, LIFETIMES, processor) {
@@ -722,6 +767,14 @@ fun processLabelResolveVariants(label: RsLabel, processor: RsResolveProcessor): 
         }
     }
     return false
+}
+
+private fun isLabelBarrier(scope: PsiElement): Boolean {
+    return scope is RsLambdaExpr || scope is RsFunction || scope is RsConstant || scope is RsBlockExpr && (scope.isAsync || scope.isConst)
+}
+
+fun resolveLabelReference(element: RsLabel, processBeyondLabelBarriers: Boolean = false): List<RsElement> {
+    return collectResolveVariants(element.referenceName) { processLabelResolveVariants(element, it, processBeyondLabelBarriers) }
 }
 
 fun processLifetimeResolveVariants(lifetime: RsLifetime, processor: RsResolveProcessor): Boolean {
@@ -1471,12 +1524,22 @@ private fun processLexicalDeclarations(
             alreadyProcessedNames.add(e.name) // Process element if it is not in the set
         }
 
-        return PsiTreeUtil.findChildrenOfType(pattern, RsPatBinding::class.java).any { binding ->
-            val name = binding.name ?: return@any false
-            patternProcessor.lazy(name, VALUES) {
-                binding.takeIf { (it.parent is RsPatField || !it.isReferenceToConstant) && hygieneFilter(it) }
-            }
-        }
+        return !processElementsWithMacros(pattern) { binding ->
+           if (binding !is RsPatBinding) {
+               return@processElementsWithMacros TreeStatus.VISIT_CHILDREN
+           }
+
+           val name = binding.name ?: return@processElementsWithMacros TreeStatus.SKIP_CHILDREN
+           val result = patternProcessor.lazy(name, VALUES) {
+               binding.takeIf { (binding.parent is RsPatField || !binding.isReferenceToConstant) && hygieneFilter(binding) }
+           }
+
+           if (result) {
+               TreeStatus.ABORT
+           } else {
+               TreeStatus.SKIP_CHILDREN
+           }
+       }
     }
 
     fun processLetExprs(
@@ -1738,6 +1801,22 @@ inline fun processWithShadowing(
 ): Boolean {
     val shadowingProcessor = processor.wrapWithShadowingProcessor(prevScope, ns)
     return f(shadowingProcessor)
+}
+
+fun processUnresolvedImports(context: RsElement, processor: (RsUseSpeck) -> Unit) {
+    walkUp(context, { it is RsMod }) { _, scope ->
+        if (scope !is RsItemsOwner) return@walkUp false
+        for (import in scope.expandedItemsCached.imports) {
+            if (!import.existsAfterExpansion) continue
+            import.useSpeck?.forEachLeafSpeck { useSpeck ->
+                if (useSpeck.isStarImport) return@forEachLeafSpeck
+                if (useSpeck.path?.reference?.multiResolve()?.isEmpty() == true) {
+                    processor(useSpeck)
+                }
+            }
+        }
+        false
+    }
 }
 
 fun findPrelude(element: RsElement): RsMod? {

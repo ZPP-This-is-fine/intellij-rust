@@ -6,11 +6,11 @@
 package org.rust.ide.fixes
 
 import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview
-import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement
+import com.intellij.codeInspection.util.IntentionName
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
+import org.rust.RsBundle
 import org.rust.cargo.project.workspace.PackageOrigin
 import org.rust.ide.presentation.render
 import org.rust.ide.presentation.renderInsertionSafe
@@ -30,9 +30,10 @@ class ChangeReturnTypeFix(
     element: RsElement,
     @SafeFieldForPreview
     private val actualTy: Ty
-) : LocalQuickFixAndIntentionActionOnPsiElement(element) {
+) : RsQuickFixBase<RsElement>(element) {
+    @IntentionName
     private val _text: String = run {
-        val callable = findCallableOwner(startElement)
+        val callable = findCallableOwner(element)
 
         val (item, name) = when (callable) {
             is RsFunction -> {
@@ -54,20 +55,14 @@ class ChangeReturnTypeFix(
             context = element,
             useQualifiedName = useQualifiedName
         )
-        "Change return type$item$name to '$rendered'"
+        RsBundle.message("intention.name.change.return.type.to", item, name, rendered)
     }
 
     override fun getText(): String = _text
-    override fun getFamilyName(): String = "Change return type"
+    override fun getFamilyName(): String = RsBundle.message("intention.family.name.change.return.type")
 
-    override fun invoke(
-        project: Project,
-        file: PsiFile,
-        editor: Editor?,
-        startElement: PsiElement,
-        endElement: PsiElement
-    ) {
-        val owner = findCallableOwner(startElement) ?: return
+    override fun invoke(project: Project, editor: Editor?, element: RsElement) {
+        val owner = findCallableOwner(element) ?: return
         val oldRetType = owner.retType
 
         if (actualTy is TyUnit) {
@@ -78,7 +73,7 @@ class ChangeReturnTypeFix(
         val oldTy = oldRetType?.typeReference?.rawType ?: TyUnknown
         val (_, useQualifiedName) = getTypeReferencesInfoFromTys(owner, actualTy, oldTy)
         val text = actualTy.renderInsertionSafe(
-            context = startElement as? RsElement,
+            context = element,
             useQualifiedName = useQualifiedName,
             includeLifetimeArguments = true
         )

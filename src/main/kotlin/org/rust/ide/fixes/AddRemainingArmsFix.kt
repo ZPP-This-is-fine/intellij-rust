@@ -6,10 +6,11 @@
 package org.rust.ide.fixes
 
 import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview
-import com.intellij.codeInspection.LocalQuickFixOnPsiElement
+import com.intellij.codeInspection.util.IntentionFamilyName
+import com.intellij.codeInspection.util.IntentionName
+import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
+import org.rust.RsBundle
 import org.rust.ide.utils.PsiInsertionPlace
 import org.rust.ide.utils.checkMatch.Pattern
 import org.rust.ide.utils.import.RsImportHelper.importTypeReferencesFromTy
@@ -21,15 +22,14 @@ open class AddRemainingArmsFix(
     match: RsMatchExpr,
     @SafeFieldForPreview
     private val patterns: List<Pattern>,
-) : LocalQuickFixOnPsiElement(match) {
+) : RsQuickFixBase<RsMatchExpr>(match) {
     override fun getFamilyName(): String = NAME
     override fun getText(): String = familyName
 
-    override fun invoke(project: Project, file: PsiFile, startElement: PsiElement, endElement: PsiElement) {
-        if (startElement !is RsMatchExpr) return
-        val expr = startElement.expr ?: return
-        val place = findArmsInsertionPlaceIn(startElement) ?: return
-        invoke(project, startElement, expr, place)
+    override fun invoke(project: Project, editor: Editor?, element: RsMatchExpr) {
+        val expr = element.expr ?: return
+        val place = findArmsInsertionPlaceIn(element) ?: return
+        invoke(project, element, expr, place)
     }
 
     fun invoke(project: Project, match: RsMatchExpr, expr: RsExpr, place: ArmsInsertionPlace) {
@@ -61,7 +61,9 @@ open class AddRemainingArmsFix(
     }
 
     companion object {
-        const val NAME = "Add remaining patterns"
+        @IntentionName
+        @IntentionFamilyName
+        val NAME = RsBundle.message("intention.name.add.remaining.patterns")
 
         fun findArmsInsertionPlaceIn(match: RsMatchExpr): ArmsInsertionPlace? {
             val expr = match.expr ?: return null
@@ -96,6 +98,8 @@ class AddWildcardArmFix(match: RsMatchExpr) : AddRemainingArmsFix(match, emptyLi
     )
 
     companion object {
-        const val NAME = "Add _ pattern"
+        @IntentionName
+        @IntentionFamilyName
+        val NAME = RsBundle.message("intention.name.add.pattern")
     }
 }

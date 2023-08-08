@@ -19,10 +19,10 @@ class Drop(
     }
 
     override fun toString(): String {
-        return "Drop(local=$local, kind=$kind, source=$source)"
+        return "Drop(local=$local, kind=$kind, source=$source)" // TODO
     }
 
     companion object {
-        val fake = Drop(MirLocal.fake, Kind.STORAGE, MirSourceInfo.Fake)
+        val fake = Drop(MirLocal.fake, Kind.STORAGE, MirSourceInfo.fake)
     }
 }

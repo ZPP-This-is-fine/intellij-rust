@@ -5,18 +5,18 @@
 
 package org.rust.ide.fixes
 
-import com.intellij.codeInspection.LocalQuickFix
-import com.intellij.codeInspection.ProblemDescriptor
+import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
+import org.rust.RsBundle
 import org.rust.lang.core.psi.RsExprStmt
 
-class RemoveSemicolonFix : LocalQuickFix {
-    override fun getName() = "Remove semicolon"
+open class RemoveSemicolonFix(
+    element: RsExprStmt,
+) : RsQuickFixBase<RsExprStmt>(element) {
+    override fun getText(): String = RsBundle.message("intention.name.remove.semicolon")
+    override fun getFamilyName(): String = text
 
-    override fun getFamilyName() = name
-
-    override fun applyFix(project: Project, descriptor: ProblemDescriptor) {
-        val statement = (descriptor.psiElement as RsExprStmt)
-        statement.semicolon?.delete()
+    override fun invoke(project: Project, editor: Editor?, element: RsExprStmt) {
+        element.semicolon?.delete()
     }
 }

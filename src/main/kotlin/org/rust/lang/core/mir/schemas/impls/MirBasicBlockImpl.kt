@@ -3,20 +3,17 @@
  * found in the LICENSE file.
  */
 
-@file:Suppress("CanSealedSubClassBeObject")
-
 package org.rust.lang.core.mir.schemas.impls
 
 import org.rust.lang.core.mir.schemas.*
 import org.rust.lang.core.mir.schemas.MirTerminator.Companion.dummy
-import org.rust.lang.core.types.ty.TyBool
 
-class MirBasicBlockImpl private constructor(
-    override val statements: MutableList<MirStatement>,
-    override var terminator: MirTerminator<MirBasicBlockImpl>,
-    override val unwind: Boolean
+class MirBasicBlockImpl(
+    override val index: Int,
+    override val unwind: Boolean,
+    override val statements: MutableList<MirStatement> = mutableListOf(),
+    override var terminator: MirTerminator<MirBasicBlockImpl> = dummy,
 ) : MirBasicBlock {
-    constructor(unwind: Boolean) : this(mutableListOf(), dummy, unwind)
 
     /**
      * Sometimes it is needed to specify terminator source later than
@@ -34,12 +31,25 @@ class MirBasicBlockImpl private constructor(
         return push(MirStatement.Assign(place, rvalue, source))
     }
 
+    fun pushAssignConstant(place: MirPlace, constant: MirConstant, source: MirSourceInfo): MirBasicBlockImpl {
+        return pushAssign(place, MirRvalue.Use(MirOperand.Constant(constant)), source)
+    }
+
     fun pushStorageLive(local: MirLocal, source: MirSourceInfo): MirBasicBlockImpl {
         return push(MirStatement.StorageLive(local, source))
     }
 
     fun pushStorageDead(local: MirLocal, source: MirSourceInfo): MirBasicBlockImpl {
         return push(MirStatement.StorageDead(local, source))
+    }
+
+    // https://github.com/rust-lang/rust/blob/f7b831ac8a897273f78b9f47165cf8e54066ce4b/compiler/rustc_mir_build/src/build/cfg.rs#L81
+    fun pushFakeRead(
+        cause: MirStatement.FakeRead.Cause,
+        place: MirPlace,
+        source: MirSourceInfo,
+    ): MirBasicBlockImpl {
+        return push(MirStatement.FakeRead(cause, place, source))
     }
 
     fun terminateWithReturn(source: MirSourceInfo?) {
@@ -63,8 +73,21 @@ class MirBasicBlockImpl private constructor(
         )
     }
 
+    // https://github.com/rust-lang/rust/blob/f7b831ac8a897273f78b9f47165cf8e54066ce4b/compiler/rustc_mir_build/src/build/cfg.rs#L121
     fun terminateWithGoto(target: MirBasicBlockImpl, source: MirSourceInfo?) {
         terminator = MirTerminator.Goto(target, getTerminatorSource(source))
+    }
+
+    fun terminateWithSwitchInt(
+        discriminant: MirOperand,
+        targets: MirSwitchTargets<MirBasicBlockImpl>,
+        source: MirSourceInfo?,
+    ) {
+        terminator = MirTerminator.SwitchInt(
+            discriminant = discriminant,
+            targets = targets,
+            source = getTerminatorSource(source),
+        )
     }
 
     fun terminateWithIf(
@@ -73,11 +96,78 @@ class MirBasicBlockImpl private constructor(
         elseBlock: MirBasicBlockImpl,
         source: MirSourceInfo?,
     ) {
-        terminator = MirTerminator.SwitchInt(
-            discriminant = cond,
-            switchTy = TyBool.INSTANCE,
-            targets = MirSwitchTargetsImpl.`if`(0, elseBlock, thenBlock),
+        val targets = MirSwitchTargetsImpl.`if`(0, elseBlock, thenBlock)
+        terminateWithSwitchInt(cond, targets, getTerminatorSource(source))
+    }
+
+    fun terminateWithFalseUnwind(realTarget: MirBasicBlockImpl, unwind: MirBasicBlockImpl?, source: MirSourceInfo?) {
+        terminator = MirTerminator.FalseUnwind(
+            realTarget = realTarget,
+            unwind = unwind,
             source = getTerminatorSource(source),
+        )
+    }
+
+    /**
+     * Creates a false edge to [imaginaryTarget] and a real edge to [realTarget].
+     * If [imaginaryTarget] is null, or is the same as the real target,
+     * a Goto is generated instead to simplify the generated MIR.
+     */
+    fun terminateWithFalseEdges(
+        realTarget: MirBasicBlockImpl,
+        imaginaryTarget: MirBasicBlockImpl?,
+        source: MirSourceInfo?
+    ) {
+        if (imaginaryTarget != null && imaginaryTarget != realTarget) {
+            terminator = MirTerminator.FalseEdge(
+                realTarget = realTarget,
+                imaginaryTarget = imaginaryTarget,
+                source = getTerminatorSource(source),
+            )
+        } else {
+            terminateWithGoto(realTarget, source)
+        }
+    }
+
+    fun terminateWithUnreachable(source: MirSourceInfo?) {
+        terminator = MirTerminator.Unreachable(getTerminatorSource(source))
+    }
+
+    fun terminateWithResume(source: MirSourceInfo?) {
+        terminator = MirTerminator.Resume(getTerminatorSource(source))
+    }
+
+    fun terminateWithCall(
+        callee: MirOperand,
+        args: List<MirOperand>,
+        destination: MirPlace,
+        target: MirBasicBlockImpl?,
+        unwind: MirBasicBlockImpl?,
+        fromCall: Boolean,
+        source: MirSourceInfo?
+    ) {
+        terminator = MirTerminator.Call(
+            callee,
+            args,
+            destination,
+            target,
+            unwind,
+            fromCall,
+            getTerminatorSource(source)
+        )
+    }
+
+    fun terminateWithDrop(
+        place: MirPlace,
+        target: MirBasicBlockImpl,
+        unwind: MirBasicBlockImpl?,
+        source: MirSourceInfo?
+    ) {
+        terminator = MirTerminator.Drop(
+            place,
+            target,
+            unwind,
+            getTerminatorSource(source)
         )
     }
 
@@ -93,15 +183,14 @@ class MirBasicBlockImpl private constructor(
         statements.add(statement)
     }
 
-    fun resume(source: MirSourceInfo?) {
-        terminator = MirTerminator.Resume(getTerminatorSource(source))
-    }
-
     fun unwindTerminatorTo(block: MirBasicBlockImpl) {
         val terminator = terminator
         when {
             terminator.isDummy() -> error("Terminator is expected to be specified by this moment")
             terminator is MirTerminator.Assert -> this.terminator = terminator.copy(unwind = block)
+            terminator is MirTerminator.FalseUnwind -> this.terminator = terminator.copy(unwind = block)
+            terminator is MirTerminator.Call -> this.terminator = terminator.copy(unwind = block)
+            terminator is MirTerminator.Drop -> this.terminator = terminator.copy(unwind = block)
             else -> error("Terminator is not unwindable")
         }
     }
