@@ -345,7 +345,7 @@ private fun fetchRustcInfo(context: CargoSyncTask.SyncContext): TaskResult<Rustc
 private fun fetchCargoWorkspace(context: CargoSyncTask.SyncContext, rustcInfo: RustcInfo?): TaskResult<CargoWorkspace> {
     return context.runWithChildProgress("Updating workspace info") { childContext ->
 
-        val serviceName = if (context.project.service<BspConnectionService>().hasBspServer()) "Cargo" else "Bsp"
+        val serviceName = if (context.project.service<BspConnectionService>().hasBspServer()) "Bsp" else "Cargo"
         val toolchain = childContext.toolchain
         if (!toolchain.looksLikeValidToolchain()) {
             return@runWithChildProgress TaskResult.Err("Invalid Rust toolchain ${toolchain.presentableLocation}")

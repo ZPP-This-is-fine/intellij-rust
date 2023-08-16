@@ -196,7 +196,7 @@ allprojects {
 
     dependencies {
         compileOnly(kotlin("stdlib-jdk8"))
-        implementation("com.github.zpp-This-is-fine:build-server-protocol:resolved-targets-workspace")
+        implementation("com.github.zpp-This-is-fine:build-server-protocol:fixed-dependencies")
         testOutput(sourceSets.getByName("test").output.classesDirs)
     }
 
