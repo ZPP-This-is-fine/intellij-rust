@@ -12,6 +12,6 @@ class BspTreeActionGroup(
     override fun getChildren(e: AnActionEvent?): Array<AnAction> {
         val node = target.selectionModel.selectionPath.lastPathComponent as? DefaultMutableTreeNode ?: return arrayOf()
         val selected = (node.userObject as? BspProjectTreeStructure.BspSimpleNode.Target) ?: return arrayOf()
-        return listOf(BuildAction(selected.name)).toTypedArray()
+        return listOf(BuildAction(selected.getId().uri.toString())).toTypedArray()
     }
 }

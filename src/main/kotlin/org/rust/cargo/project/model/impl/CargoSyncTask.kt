@@ -363,7 +363,7 @@ private fun List<CargoProjectImpl>.deduplicateProjects(): List<CargoProjectImpl>
 private fun fetchCargoWorkspace(context: CargoSyncTask.SyncContext, rustcInfo: RustcInfo?): TaskResult<CargoWorkspace> {
     return context.runWithChildProgress(RsBundle.message("progress.text.updating.workspace.info")) { childContext ->
 
-        val serviceName = if (context.project.service<BspConnectionService>().hasBspServer()) "cargo" else "bsp"
+        val serviceName = if (context.project.service<BspConnectionService>().hasBspServer()) "bsp" else "cargo"
         val toolchain = childContext.toolchain
         if (!toolchain.looksLikeValidToolchain()) {
             return@runWithChildProgress TaskResult.Err(RsBundle.message("invalid.rust.toolchain.0", toolchain.presentableLocation))

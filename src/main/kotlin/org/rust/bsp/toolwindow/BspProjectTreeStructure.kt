@@ -1,6 +1,7 @@
 package org.rust.bsp.toolwindow
 
 import ch.epfl.scala.bsp4j.BuildTarget
+import ch.epfl.scala.bsp4j.BuildTargetIdentifier
 import com.intellij.ide.projectView.PresentationData
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.service
@@ -171,6 +172,8 @@ class BspProjectTreeStructure(
             override fun buildChildren(): Array<SimpleNode> = children.toTypedArray()
 
             override fun getName(): String = target.displayName
+
+            fun getId(): BuildTargetIdentifier = target.id
 
             override fun update(presentation: PresentationData) {
                 val attrs = SimpleTextAttributes.REGULAR_ATTRIBUTES
