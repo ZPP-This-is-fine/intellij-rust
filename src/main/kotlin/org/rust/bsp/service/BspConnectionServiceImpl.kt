@@ -364,13 +364,12 @@ private fun collectRustBspTargets(bspTargets: List<BuildTarget>): List<BuildTarg
     }
 }
 
-private fun createCfgOptions(cfgOptions: RustCfgOptions?): CfgOptions? {
-    if (cfgOptions == null)
+private fun createCfgOptions(cfgOptions: Map<String, List<String>>?): CfgOptions? {
+    if (cfgOptions.isNullOrEmpty())
         return null
-    val name = cfgOptions.nameOptions?.toSet()
-    val keyValueOptions = cfgOptions.keyValueOptions?.mapValues { it.value.toSet() }
-    if (name == null || keyValueOptions == null)
-        return null
+    val (nameOptions, keyValueOptionsList) = cfgOptions.entries.partition { it.value.isEmpty() }
+    val name = nameOptions.map { it.key }.toSet()
+    val keyValueOptions = keyValueOptionsList.associate { it.key to it.value.toSet() }
     return CfgOptions(keyValueOptions, name)
 }
 
@@ -434,7 +433,7 @@ fun createPackages(projectWorkspaceData: RustWorkspaceResult, pathReplacer: (Str
             contentRootUrl = pathReplacer(rustPackage.rootUrl),
             name = rustPackage.name,
             version = rustPackage.version,
-            targets = rustPackage.targets.map { resolveTarget(it, pathReplacer) },
+            targets = rustPackage.resolvedTargets.map { resolveTarget(it, pathReplacer) },
             allTargets = rustPackage.allTargets.map { resolveTarget(it, pathReplacer) },
             source = rustPackage.source,
             origin = resolveOrigin(rustPackage.origin),
@@ -465,12 +464,11 @@ private fun resolveTarget(target: RustBuildTarget, pathReplacer: (String) -> Str
     )
 }
 
-private fun resolveDependency(dependencyType: RustDepKind): CargoWorkspace.DepKind {
+private fun resolveDependency(dependencyType: String): CargoWorkspace.DepKind {
     return when (dependencyType) {
-        RustDepKind.BUILD -> CargoWorkspace.DepKind.Build
-        RustDepKind.DEV -> CargoWorkspace.DepKind.Development
-        RustDepKind.NORMAL -> CargoWorkspace.DepKind.Normal
-        // TODO add RustDepKind.STDLIB -> CargoWorkspace.kt 367
+        "build" -> CargoWorkspace.DepKind.Build
+        "dev" -> CargoWorkspace.DepKind.Development
+        "normal" -> CargoWorkspace.DepKind.Normal
         else -> CargoWorkspace.DepKind.Unclassified
     }
 }
