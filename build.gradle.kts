@@ -194,7 +194,7 @@ allprojects {
 
     dependencies {
         compileOnly(kotlin("stdlib-jdk8"))
-        implementation("com.github.zpp-This-is-fine:build-server-protocol:changed-rust-dep-kind")
+        implementation("com.github.zpp-This-is-fine:build-server-protocol:cargo-extension-features")
         testOutput(sourceSets.getByName("test").output.classesDirs)
     }
 

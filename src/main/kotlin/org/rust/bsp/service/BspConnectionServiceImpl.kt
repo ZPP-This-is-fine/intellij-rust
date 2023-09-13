@@ -438,7 +438,7 @@ fun createPackages(projectWorkspaceData: RustWorkspaceResult, pathReplacer: (Str
             source = rustPackage.source,
             origin = resolveOrigin(rustPackage.origin),
             edition = resolveEdition(rustPackage.edition),
-            features = rustPackage.features.associate { feature -> Pair(feature.name, feature.dependencies) },
+            features = rustPackage.features.mapValues { it.value.toList() },
             enabledFeatures = rustPackage.enabledFeatures.toSet(),
             cfgOptions = createCfgOptions(rustPackage.cfgOptions),
             env = rustPackage.env,
@@ -460,7 +460,7 @@ private fun resolveTarget(target: RustBuildTarget, pathReplacer: (String) -> Str
         kind = resolveTargetKind(target.kind, target.crateTypes),
         edition = resolveEdition(target.edition),
         doctest = target.doctest,
-        requiredFeatures = target.requiredFeatures
+        requiredFeatures = target.requiredFeatures.toList()
     )
 }
 
@@ -494,7 +494,7 @@ fun createRawDependencies(projectWorkspaceData: RustWorkspaceResult): Map<Packag
             dep.target,
             dep.optional,
             dep.usesDefaultFeatures,
-            dep.features
+            dep.features.toList()
         )
     } }
 }
