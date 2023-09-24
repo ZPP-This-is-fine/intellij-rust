@@ -173,25 +173,6 @@ class CargoSyncTask(
                 return@runWithChildProgress TaskResult.Err(RsBundle.message("invalid.rust.toolchain.02", location))
             }
 
-            val bspService: BspConnectionService = context.project.service<BspConnectionService>()
-            if (bspService.hasBspServer()) {
-                try {
-                    val rustcVersion = bspService.getRustcVersion()
-                    val sysroot =
-                        bspService.getRustcSysroot()
-                            ?: return@runWithChildProgress TaskResult.Err(
-                                RsBundle.message("failed.to.get.project.sysroot")
-                            )
-                    return@runWithChildProgress TaskResult.Ok(
-                        RustcInfo(sysroot, rustcVersion, null, null)
-                    )
-                } catch (e: NoSuchElementException) {
-                    return@runWithChildProgress TaskResult.Err(
-                          RsBundle.message(RsBundle.message("build.event.title.failed.to.fetch.rustc.version"))
-                    )
-                }
-            }
-
             val workingDirectory = childContext.oldCargoProject.workingDirectory
 
             val listener = RustcVersionProcessAdapter(childContext)
@@ -480,24 +461,6 @@ private fun Rustup.fetchStdlib(
     rustcInfo: RustcInfo?,
     cargoConfig: CargoConfig
 ): TaskResult<StandardLibrary> {
-    val bspService = context.project.service<BspConnectionService>()
-    if (bspService.hasBspServer()) {
-        val stdlib: VirtualFile? = try {
-            bspService.getStdLibPath()
-        } catch (e: NoSuchElementException) {
-            return TaskResult.Err(RsBundle.message("failed.to.get.standard.library.0", e.message ?: ""))
-        }
-        return if (stdlib != null) {
-            val lib = StandardLibrary.fromFile(context.project, stdlib, rustcInfo, cargoConfig, listener = SyncProcessAdapter(context), useBsp = true)
-            if (lib == null) {
-                TaskResult.Err(RsBundle.message("corrupted.standard.library.0", stdlib.presentableUrl))
-            } else {
-                TaskResult.Ok(lib)
-            }
-        } else {
-            TaskResult.Err(RsBundle.message("failed.to.fetch.standard.library.from.bsp"))
-        }
-    }
     return when (val download = UnitTestRustcCacheService.cached(rustcInfo?.version) { downloadStdlib() }) {
         is DownloadResult.Ok -> {
             val lib = StandardLibrary.fromFile(context.project, download.value, rustcInfo, cargoConfig, listener = SyncProcessAdapter(context))

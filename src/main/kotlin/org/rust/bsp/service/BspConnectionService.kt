@@ -28,14 +28,6 @@ interface BspConnectionService : Disposable {
 
     fun hasBspServer(): Boolean
 
-    fun getMacroResolverPath(): Path?
-
-    fun getStdLibPath(): VirtualFile?
-
-    fun getRustcVersion(): RustcVersion?
-
-    fun getRustcSysroot(): String?
-
     fun getBspTargets(): List<BuildTarget>
 
     companion object {

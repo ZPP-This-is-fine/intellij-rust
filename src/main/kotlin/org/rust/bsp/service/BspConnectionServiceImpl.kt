@@ -13,7 +13,6 @@ import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.project.stateStore
 import com.intellij.util.EnvironmentUtil
 import com.intellij.util.concurrency.AppExecutorUtil
-import com.intellij.util.text.SemVer
 import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.rust.bsp.BspClient
 import org.rust.bsp.BspConstants
@@ -22,10 +21,7 @@ import org.rust.cargo.project.workspace.CargoWorkspace
 import org.rust.cargo.project.workspace.CargoWorkspaceData
 import org.rust.cargo.project.workspace.PackageId
 import org.rust.cargo.project.workspace.PackageOrigin
-import org.rust.cargo.runconfig.buildtool.CargoBuildResult
-import org.rust.cargo.toolchain.RustChannel
 import org.rust.cargo.toolchain.impl.CargoMetadata
-import org.rust.cargo.toolchain.impl.RustcVersion
 import org.rust.stdext.HashCode
 import java.io.InputStream
 import java.io.OutputStream
@@ -36,7 +32,6 @@ import java.nio.file.Paths
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
-import kotlin.NoSuchElementException
 import kotlin.io.path.Path
 
 class BspConnectionServiceImpl(val project: Project) : BspConnectionService {
@@ -210,36 +205,6 @@ class BspConnectionServiceImpl(val project: Project) : BspConnectionService {
         return getBspConnectionDetailsFile() != null
     }
 
-    override fun getMacroResolverPath(): Path? {
-        val server = getBspServer()
-        val toolchain = getDefaultToolchain(server)
-        return toolchain.procMacroSrvPath.toVirtualFile()?.toNioPath()
-    }
-
-    override fun getStdLibPath(): VirtualFile? {
-        val server = getBspServer()
-        val toolchain = getDefaultToolchain(server)
-        // TODO: FIXME: We use the hardcoded way to collect stdlib
-        //  and it requires path to parent directory of all stdlib packages.
-        //  Switching to `experimental` stdlib resolution this suffix should be removed.
-        return (toolchain.rustStdLib.srcSysrootPath + "/library").toVirtualFile()
-    }
-
-    override fun getRustcVersion(): RustcVersion? {
-        val server = getBspServer()
-        val toolchain = getDefaultToolchain(server)
-        val version = toolchain.rustStdLib.version
-        // TODO: Just to be sure it is not empty.
-        val host = toolchain.rustStdLib.host ?: "x86_64-unknown-linux-gnu"
-        return SemVer.parseFromText(version)?.let { RustcVersion(it, host, RustChannel.STABLE) }
-    }
-
-    override fun getRustcSysroot(): String? {
-        val server = getBspServer()
-        val toolchain = getDefaultToolchain(server)
-        return toolchain.rustStdLib.sysrootPath
-    }
-
     override fun getBspTargets(): List<BuildTarget> = queryForBazelTargets(getBspServer()).get().targets
 
     override fun dispose() = disconnect()
@@ -257,30 +222,6 @@ fun ProcessBuilder.withRealEnvs(): ProcessBuilder {
     env.putAll(EnvironmentUtil.getEnvironmentMap())
 
     return this
-}
-
-fun getDefaultToolchain(
-    server: BspServer
-): RustToolchainItem {
-    try {
-        // TODO: We get the first toolchain and ignore the rest
-        val (toolchain) = calculateToolchains(server)
-        return toolchain
-    } catch (e: IndexOutOfBoundsException) {
-        throw NoSuchElementException("Could not find any rust toolchains")
-    }
-}
-
-fun calculateToolchains(
-    server: BspServer
-): List<RustToolchainItem> {
-    val projectBazelTargets = queryForBazelTargets(server).get()
-    projectBazelTargets.targets.removeAll { it.id.uri == BspConstants.BSP_WORKSPACE_ROOT_URI }
-
-    val rustBspTargetsIds = collectRustBspTargets(projectBazelTargets.targets).map { it.id }
-    val toolchainsResult = queryForToolchains(server, rustBspTargetsIds).get()
-
-    return toolchainsResult.toolchains.distinct()
 }
 
 
@@ -386,7 +327,7 @@ private fun resolveTargetKind(targetKind: RustTargetKind, crateTypes: List<RustC
     return when (targetKind) {
         RustTargetKind.BENCH -> CargoWorkspace.TargetKind.Bench
         RustTargetKind.BIN -> CargoWorkspace.TargetKind.Bin
-        RustTargetKind.CUSTOMBUILD -> CargoWorkspace.TargetKind.CustomBuild
+        RustTargetKind.CUSTOM_BUILD -> CargoWorkspace.TargetKind.CustomBuild
         RustTargetKind.EXAMPLE -> if (crateTypes.contains(RustCrateType.BIN)) {
             CargoWorkspace.TargetKind.ExampleBin
         } else {
@@ -506,10 +447,6 @@ fun queryForWorkspaceData(server: BspServer, params: List<BuildTargetIdentifier>
 
 fun queryForBazelTargets(server: BspServer): CompletableFuture<WorkspaceBuildTargetsResult> {
     return server.workspaceBuildTargets()
-}
-
-fun queryForToolchains(server: BspServer, params: List<BuildTargetIdentifier>): CompletableFuture<RustToolchainResult> {
-    return server.rustToolchain(RustToolchainParams(params))
 }
 
 private fun <T> CompletableFuture<T>.catchSyncErrors(errorCallback: (Throwable) -> Unit): CompletableFuture<T> =

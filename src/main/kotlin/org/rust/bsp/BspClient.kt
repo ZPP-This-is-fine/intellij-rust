@@ -33,4 +33,12 @@ class BspClient : BuildClient {
     override fun onBuildTargetDidChange(params: DidChangeBuildTarget?) {
         println("onBuildTargetDidChange $params")
     }
+
+    override fun onRunPrintStdout(params: PrintParams?) {
+        println("onRunPrintStdout $params")
+    }
+
+    override fun onRunPrintStderr(params: PrintParams?) {
+        println("onRunPrintStderr $params")
+    }
 }

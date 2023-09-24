@@ -541,14 +541,6 @@ data class CargoProjectImpl(
     override val project get() = projectService.project
 
     override val procMacroExpanderPath: Path? = rustcInfo?.sysroot?.let { sysroot ->
-        val bspService = project.service<BspConnectionService>()
-        if (bspService.hasBspServer()) {
-            try {
-                return@let bspService.getMacroResolverPath()
-            } catch (e: NoSuchElementException) {
-                return@let null
-            }
-        }
         val toolchain = project.toolchain ?: return@let null
         ProcMacroServerPool.findExpanderExecutablePath(toolchain, sysroot)
     }

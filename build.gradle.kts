@@ -194,7 +194,7 @@ allprojects {
 
     dependencies {
         compileOnly(kotlin("stdlib-jdk8"))
-        implementation("com.github.zpp-This-is-fine:build-server-protocol:cargo-extension-features")
+        implementation("com.github.zpp-This-is-fine:build-server-protocol:fix-deleting-rust-toolchain")
         testOutput(sourceSets.getByName("test").output.classesDirs)
     }
 
