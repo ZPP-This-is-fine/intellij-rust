@@ -17,6 +17,7 @@ import com.intellij.openapi.project.Project
 import org.rust.RsTask
 import org.rust.bsp.service.BspConnectionService
 import org.rust.cargo.project.settings.rustSettings
+import java.util.*
 import javax.swing.JComponent
 
 class BspBuildTask(
@@ -35,7 +36,9 @@ class BspBuildTask(
         }
 
         val connection = project.service<BspConnectionService>()
-        val result = connection.compileSolution(CompileParams(bspTargets)).get()
+        val compileParams = CompileParams(bspTargets)
+        compileParams.originId = "build-" + UUID.randomUUID().toString()
+        val result = connection.compileSolution(compileParams).get()
         buildProgress.output("Finished building targets\n", true)
 
         if (result.statusCode == StatusCode.OK) {
