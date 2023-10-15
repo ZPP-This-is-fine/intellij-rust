@@ -301,7 +301,7 @@ private fun createSymlinkReplacer(
 
 private fun collectRustBspTargets(bspTargets: List<BuildTarget>): List<BuildTarget> {
     return bspTargets.filter {
-        BuildTargetDataKind.RUST in it.languageIds
+        "rust" in it.languageIds
     }
 }
 
@@ -394,7 +394,7 @@ fun createPackages(projectWorkspaceData: RustWorkspaceResult, pathReplacer: (Str
     }.sortedBy { it.id }
 }
 
-private fun resolveTarget(target: RustBuildTarget, pathReplacer: (String) -> String): CargoWorkspaceData.Target {
+private fun resolveTarget(target: RustTarget, pathReplacer: (String) -> String): CargoWorkspaceData.Target {
     return CargoWorkspaceData.Target(
         crateRootUrl = pathReplacer(target.crateRootUrl),
         name = target.name,

@@ -194,7 +194,7 @@ allprojects {
 
     dependencies {
         compileOnly(kotlin("stdlib-jdk8"))
-        implementation("com.github.zpp-This-is-fine:build-server-protocol:fix-deleting-rust-toolchain")
+        implementation("com.github.zpp-This-is-fine:build-server-protocol:fix-typos")
         testOutput(sourceSets.getByName("test").output.classesDirs)
     }
 
